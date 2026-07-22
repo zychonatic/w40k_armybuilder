@@ -1,6 +1,6 @@
 // Rendering helpers. Pure-ish: take data + callbacks, write DOM.
 
-import { factionLabel } from './config.js';
+import { factionLabel, compareRoles } from './config.js';
 import {
   computePoints, selectedOptions, isSingleChoice, validate, currentSize, sizeCost,
   ENH_KEY, isCharacter, selectedEnhancement, totalWithEnhancement, selectionsFromEntry,
@@ -10,6 +10,12 @@ function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// Iterate a Map keyed by role in canonical battlefield-role order. Roster/play
+// entries arrive in add-order, so grouping alone doesn't order the groups.
+function rolesInOrder(byRole) {
+  return [...byRole.entries()].sort((a, b) => compareRoles(a[0], b[0]));
 }
 
 export function setStatus(el, text, busy = false) {
@@ -127,7 +133,7 @@ export function renderUnitList(el, units, {
     byRole.get(u.role).push(u);
   }
   let html = '';
-  for (const [role, us] of byRole) {
+  for (const [role, us] of rolesInOrder(byRole)) {
     html += `<div class="role-group"><div class="role-title">${esc(role)} (${us.length})</div>`;
     for (const u of us) {
       html += `<div class="unit-row${u.id === activeId ? ' active' : ''}" data-id="${esc(u.id)}">
@@ -452,7 +458,7 @@ export function renderRoster(el, state, total, limit, { onRemove, onEdit, onAtta
     byRole.get(e.role).push(e);
   }
   let html = '';
-  for (const [role, entries] of byRole) {
+  for (const [role, entries] of rolesInOrder(byRole)) {
     html += `<div class="role-title">${esc(role)}</div>`;
     for (const e of entries) {
       html += rosterEntryHtml(e, attach, false);
@@ -529,7 +535,7 @@ export function renderPlayGrid(bodyEl, entries, unitById, { onSelect, attach }) 
     byRole.get(e.role).push(e);
   }
   let html = '';
-  for (const [role, es] of byRole) {
+  for (const [role, es] of rolesInOrder(byRole)) {
     html += `<div class="play-role">${esc(role)}</div><div class="play-grid">`;
     for (const e of es) {
       const leaders = attach.attachedLeaders.get(e.uid) || [];

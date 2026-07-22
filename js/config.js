@@ -61,6 +61,27 @@ export function mfmSlug(factionFile) {
     .replace(/^-|-$/g, '');
 }
 
+// Canonical battlefield-role ordering. Units, the army list and play mode all
+// group by role; this fixes the order the groups appear in (datasheet order),
+// rather than alphabetical. Unknown roles sort after these, alphabetically.
+export const ROLE_ORDER = [
+  'Epic Hero', 'Character', 'Battleline', 'Infantry', 'Beast', 'Swarm',
+  'Mounted', 'Monster', 'Vehicle', 'Dedicated Transport', 'Fortification',
+];
+const ROLE_RANK = new Map(ROLE_ORDER.map((r, i) => [r.toLowerCase(), i]));
+
+// Sort rank for a role name (case-insensitive). Unknown roles get a large rank
+// so they trail the known ones; ties are broken by the caller (name/alpha).
+export function roleRank(role) {
+  const r = ROLE_RANK.get(String(role || '').toLowerCase());
+  return r == null ? ROLE_ORDER.length : r;
+}
+
+// Comparator for two role names by canonical order, then alphabetically.
+export function compareRoles(a, b) {
+  return roleRank(a) - roleRank(b) || String(a).localeCompare(String(b));
+}
+
 export const STORAGE_KEY = 'w40k_armybuilder_roster_v1';
 
 // Fallback faction list if the GitHub contents API is unavailable / rate-limited.

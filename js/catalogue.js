@@ -2,6 +2,8 @@
 // Turns raw BSData/BattleScribe catalogue objects into a flat id->node index and
 // then into simplified `unit` objects the UI can render.
 
+import { compareRoles } from './config.js';
+
 const WEAPON_TYPES = new Set(['Ranged Weapons', 'Melee Weapons']);
 const STAT_ORDER = ['M', 'T', 'Sv', 'W', 'LD', 'OC', 'InSv'];
 const WEAPON_STAT_ORDER = ['Range', 'A', 'BS', 'WS', 'S', 'AP', 'D'];
@@ -670,7 +672,7 @@ export function listUnits(catalogues, index) {
       units.push(unit);
     }
   }
-  units.sort((a, b) => a.role.localeCompare(b.role) || a.name.localeCompare(b.name));
+  units.sort((a, b) => compareRoles(a.role, b.role) || a.name.localeCompare(b.name));
   annotateLeaders(units);
   return units;
 }
