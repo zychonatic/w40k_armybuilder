@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>W40k Army Builder</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>⚔️ W40k Army Builder</h1>
+    <div class="topbar-controls">
+      <label>Faction
+        <select id="faction-select">
+          <option value="">Loading factions…</option>
+        </select>
+      </label>
+      <label>Detachment
+        <select id="detachment-select" disabled>
+          <option value="">— select faction first —</option>
+        </select>
+      </label>
+      <label>Limit
+        <select id="limit-select"></select>
+      </label>
+      <span id="status" class="status"></span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- Left: unit browser -->
+    <section class="panel browser">
+      <div class="panel-head">
+        <h2>Units</h2>
+        <label class="legends-toggle" title="Show Warhammer Legends units">
+          <input type="checkbox" id="toggle-legends" /> Legends
+        </label>
+        <input id="unit-filter" type="search" placeholder="Filter units…" />
+      </div>
+      <div id="unit-list" class="unit-list">
+        <p class="hint">Select a faction to browse its units.</p>
+      </div>
+    </section>
+
+    <!-- Middle: unit detail / config -->
+    <section class="panel detail">
+      <div class="panel-head"><h2>Unit</h2></div>
+      <div id="unit-detail" class="unit-detail">
+        <p class="hint">Click a unit to see its stats and wargear.</p>
+      </div>
+    </section>
+
+    <!-- Right: roster -->
+    <section class="panel roster">
+      <div class="panel-head">
+        <h2>Army</h2>
+        <div class="roster-total">
+          <span id="roster-total">0</span> / <span id="roster-limit">0</span> pts
+        </div>
+      </div>
+      <div id="detachment-bar" class="detachment-bar"></div>
+      <div id="roster-list" class="roster-list">
+        <p class="hint">Your army is empty.</p>
+      </div>
+      <div class="roster-actions">
+        <button id="btn-play">Play</button>
+        <button id="btn-export">Export</button>
+        <button id="btn-export-units" title="Export all faction units with full stats and abilities">Export Units</button>
+        <button id="btn-clear" class="danger">Clear</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Export modal -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3>Army List</h3>
+        <button id="modal-close">✕</button>
+      </div>
+      <textarea id="export-text" readonly></textarea>
+      <div class="modal-actions">
+        <button id="btn-copy">Copy to clipboard</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit unit modal -->
+  <div id="edit-modal" class="modal hidden">
+    <div class="modal-box edit-modal-box">
+      <div class="modal-head">
+        <h3 id="edit-modal-title">Edit Unit</h3>
+        <button id="edit-modal-close">✕</button>
+      </div>
+      <div id="edit-modal-body" class="unit-detail edit-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Play mode: full-screen army view -->
+  <div id="play-overlay" class="play-overlay hidden">
+    <div class="play-head">
+      <div class="play-title">
+        <h2 id="play-heading">Army</h2>
+        <span id="play-sub" class="play-sub"></span>
+      </div>
+      <button id="play-close" class="play-close">Exit ✕</button>
+    </div>
+    <div id="play-body" class="play-body"></div>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
