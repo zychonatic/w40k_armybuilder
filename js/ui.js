@@ -726,8 +726,6 @@ export function renderPlayStratagems(bodyEl, vm, { onBack }) {
     return h + '</div>';
   };
   let html = '<div class="play-stratagems"><button class="play-back">← Back</button>';
-  html += section('Core Stratagems', '11th ed. · everyone', vm.core,
-    'Core stratagem data unavailable — check your connection.');
   for (const g of vm.groups) {
     html += section(g.name, g.found ? '10th ed. data' : '', g.strats,
       'No 10th-edition stratagems match this detachment — likely a new 11th-edition detachment not yet in the dataset.');
@@ -735,6 +733,8 @@ export function renderPlayStratagems(bodyEl, vm, { onBack }) {
   if (!vm.groups.length) {
     html += '<p class="hint">No detachment selected — add one in the army panel to see its stratagems.</p>';
   }
+  html += section('Core Stratagems', '11th ed. · everyone', vm.core,
+    'Core stratagem data unavailable — check your connection.');
   html += '<p class="strat-attrib">Stratagem data via Wahapedia, from the community card-generator dataset. '
     + '10th-edition detachment rules are shown as a fallback until 11th-edition data is published.</p></div>';
   bodyEl.innerHTML = html;
