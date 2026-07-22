@@ -3,6 +3,7 @@
 import {
   RAW_BASE, CONTENTS_API, GAME_SYSTEM_FILE, FALLBACK_FACTIONS, factionLabel,
   MFM_RAW_BASE, mfmSlug, normDetName,
+  STRAT_RAW_BASE, STRAT_CARDS_11E, STRAT_CARDS_10E,
 } from './config.js';
 
 // filename -> Promise<catalogue object | null>  (global cache; shared libraries load once)
@@ -116,6 +117,41 @@ function parseDetachmentDp(text) {
     if (dpM && curName) map.set(normDetName(curName), Number(dpM[1]));
   }
   return map;
+}
+
+// ---- stratagems (Wahapedia-derived) ----------------------------------------
+
+// Promise cache: the raw stratagem JSON bundle is fetched once per session.
+let stratDataPromise = null;
+
+async function fetchStratJson(file) {
+  const url = STRAT_RAW_BASE + file;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.warn('[data] stratagem fetch failed', res.status, file);
+      return null;
+    }
+    return await res.json();
+  } catch (e) {
+    console.warn('[data] stratagem network/parse error', file, e);
+    return null;
+  }
+}
+
+// Fetch the two stratagem card files in parallel. Returns { core11, cards10 };
+// either may be null on failure (caller degrades: missing core11 → no core
+// section, missing cards10 → every detachment shows "no data").
+export async function loadStratagemData() {
+  if (stratDataPromise) return stratDataPromise;
+  stratDataPromise = (async () => {
+    const [core11, cards10] = await Promise.all([
+      fetchStratJson(STRAT_CARDS_11E),
+      fetchStratJson(STRAT_CARDS_10E),
+    ]);
+    return { core11, cards10 };
+  })();
+  return stratDataPromise;
 }
 
 // Load a faction and everything needed to resolve its units:

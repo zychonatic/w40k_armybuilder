@@ -20,6 +20,16 @@ export const DEFAULT_LIMIT = 2000;
 // points" (dp) and enhancement costs. Raw YAML, CORS-enabled like the main repo.
 export const MFM_RAW_BASE = 'https://raw.githubusercontent.com/BSData/wh40k-11e-mfm/main/data/';
 
+// Stratagem data. BSData carries NO stratagems (only referenced in ability
+// text), so we pull a Wahapedia-derived dataset published by the community
+// card-generator repo. Served over raw.githubusercontent.com (CORS: *), so it's
+// fetchable client-side like everything else. 11th ed. just launched, so only
+// CORE stratagems exist for 11e yet; per-detachment stratagems exist only for
+// 10e — we show 11e core + fall back to 10e detachment strats (clearly labelled).
+export const STRAT_RAW_BASE = 'https://raw.githubusercontent.com/pguetschow/warhammer-40k-stratagem-card-generator/main/public/data/';
+export const STRAT_CARDS_11E = '11/cards.json'; // core stratagems (11e)
+export const STRAT_CARDS_10E = '10/cards.json'; // full faction/detachment strats (10e)
+
 // 11th edition lets you take several detachments up to a detachment-point (DP)
 // budget that scales with battle size. The official values live in the WH40k
 // app; this mirrors them for our presets (2000 pts → 3 DP). Adjust here if you

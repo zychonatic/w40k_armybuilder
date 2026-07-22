@@ -671,6 +671,76 @@ function selectedOptionsBlock(options) {
   return html + '</div>';
 }
 
+// ---- stratagems (Wahapedia-derived) ----------------------------------------
+
+// Stratagem text fields carry sanctioned GW HTML (bold, breaks, lists). We keep
+// the "always esc() external data" rule by escaping FIRST, then re-enabling a
+// tiny whitelist of formatting tags. Attribute-bearing <span> wrappers (rare)
+// are dropped, keeping their text. Nothing else survives as live markup.
+function stratText(s) {
+  return esc(s)
+    .replace(/&lt;br\s*\/?&gt;/gi, '<br>')
+    .replace(/&lt;(\/?)(b|i|u|ul|li)&gt;/gi, '<$1$2>')
+    .replace(/&lt;\/?span[\s\S]*?&gt;/gi, '');
+}
+
+// Human label for a stratagem's coded `timing`.
+const TIMING_LABEL = {
+  anyTurn: 'Any turn', yourTurn: 'Your turn',
+  opponentsTurn: "Opponent's turn", eitherTurn: 'Either turn',
+};
+
+function stratCardHtml(s) {
+  const cp = (s.cp === 0 || s.cp) ? `<span class="strat-cp">${esc(s.cp)}CP</span>` : '';
+  const chips = [];
+  if (s.type) chips.push(`<span class="chip">${esc(s.type)}</span>`);
+  const timing = TIMING_LABEL[s.timing] || s.timing;
+  if (timing) chips.push(`<span class="chip">${esc(timing)}</span>`);
+  if (Array.isArray(s.phases)) {
+    for (const p of s.phases) {
+      if (p && p !== 'any') chips.push(`<span class="chip">${esc(p)}</span>`);
+    }
+  }
+  const field = (label, val) => (val
+    ? `<div class="strat-field"><span class="sf-label">${label}</span> <span class="sf-text">${stratText(val)}</span></div>`
+    : '');
+  return `<div class="strat-card">
+    <div class="strat-head"><span class="strat-name">${esc(s.name)}</span>${cp}</div>
+    <div class="chips strat-meta">${chips.join('')}</div>
+    ${field('WHEN', s.when)}
+    ${field('TARGET', s.target)}
+    ${field('EFFECT', s.effect)}
+    ${field('RESTRICTIONS', s.restrictions)}
+  </div>`;
+}
+
+// Full-screen stratagem reference: a Core section (11e, everyone) plus one
+// section per selected detachment (10e fallback data, or a hint when unmatched).
+export function renderPlayStratagems(bodyEl, vm, { onBack }) {
+  const section = (title, tag, strats, emptyHint) => {
+    let h = `<div class="strat-section"><div class="strat-sec-head"><h3>${esc(title)}</h3>`
+      + (tag ? `<span class="strat-sec-tag">${esc(tag)}</span>` : '') + '</div>';
+    h += strats.length
+      ? strats.map(stratCardHtml).join('')
+      : `<p class="hint">${esc(emptyHint)}</p>`;
+    return h + '</div>';
+  };
+  let html = '<div class="play-stratagems"><button class="play-back">← Back</button>';
+  html += section('Core Stratagems', '11th ed. · everyone', vm.core,
+    'Core stratagem data unavailable — check your connection.');
+  for (const g of vm.groups) {
+    html += section(g.name, g.found ? '10th ed. data' : '', g.strats,
+      'No 10th-edition stratagems match this detachment — likely a new 11th-edition detachment not yet in the dataset.');
+  }
+  if (!vm.groups.length) {
+    html += '<p class="hint">No detachment selected — add one in the army panel to see its stratagems.</p>';
+  }
+  html += '<p class="strat-attrib">Stratagem data via Wahapedia, from the community card-generator dataset. '
+    + '10th-edition detachment rules are shown as a fallback until 11th-edition data is published.</p></div>';
+  bodyEl.innerHTML = html;
+  bodyEl.querySelector('.play-back').addEventListener('click', onBack);
+}
+
 export function openPlayMode(heading, sub) {
   document.getElementById('play-heading').textContent = heading;
   document.getElementById('play-sub').textContent = sub;

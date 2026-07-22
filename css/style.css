@@ -294,6 +294,47 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .ds-options .ds-grp { color: var(--muted); }
 .ds-options .o-cost { color: var(--accent-2); font-size: 11.5px; }
 
+/* play mode: stratagems */
+.play-head-actions { display: flex; align-items: center; gap: 10px; }
+.play-strats {
+  background: var(--panel-2); color: var(--accent-2);
+  border: 1px solid var(--accent-2); font-size: 13px;
+}
+.play-stratagems { max-width: 820px; margin: 0 auto; }
+.play-stratagems > .play-back { margin-bottom: 14px; }
+.strat-section { margin-bottom: 22px; }
+.strat-sec-head {
+  display: flex; align-items: baseline; gap: 10px;
+  margin: 6px 2px 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border);
+}
+.strat-sec-head h3 { margin: 0; font-size: 16px; color: var(--accent-2); }
+.strat-sec-tag {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
+}
+.strat-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px 14px; margin-bottom: 10px;
+}
+.strat-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.strat-name { font-size: 14.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
+.strat-cp {
+  font-size: 12px; font-weight: 700; color: var(--accent); white-space: nowrap;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 1px 7px;
+}
+.strat-meta { margin: 8px 0 2px; }
+.strat-field { font-size: 13px; margin-top: 8px; line-height: 1.45; }
+.sf-label {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--accent-2);
+}
+.sf-text { color: var(--text); }
+.sf-text ul { margin: 4px 0 0 18px; }
+.sf-text li { margin: 2px 0; }
+.strat-attrib {
+  font-size: 11px; color: var(--muted); margin-top: 18px;
+  padding-top: 10px; border-top: 1px solid var(--border);
+}
+
 .spinner { display:inline-block; width:12px; height:12px; border:2px solid var(--muted); border-top-color: var(--accent); border-radius:50%; animation: spin 0.8s linear infinite; vertical-align:-1px; margin-right:6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 

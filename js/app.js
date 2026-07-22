@@ -1,8 +1,11 @@
 // Bootstrap + orchestration.
 
 import { POINTS_PRESETS, dpBudget, normDetName } from './config.js';
-import { loadFactionList, loadCatalogueBundle, loadDetachmentPoints } from './data.js';
+import {
+  loadFactionList, loadCatalogueBundle, loadDetachmentPoints, loadStratagemData,
+} from './data.js';
 import { buildIndex, listUnits, listDetachments } from './catalogue.js';
+import { buildStratIndex, resolveArmyStratagems } from './stratagems.js';
 import {
   defaultSelections, toggleOption, SIZE_KEY, ENH_KEY, isCharacter, selectedEnhancement,
   selectionsFromEntry,
@@ -35,6 +38,7 @@ const dom = {
   playOverlay: document.getElementById('play-overlay'),
   playBody: document.getElementById('play-body'),
   playClose: document.getElementById('play-close'),
+  playStrats: document.getElementById('play-strats'),
 };
 
 const app = {
@@ -46,6 +50,7 @@ const app = {
   selections: {},
   edit: { uid: null, unit: null, selections: {} },
   play: { view: 'grid', uid: null, unitById: null },
+  strats: null, // built stratagem index, lazily loaded on first play-mode use
   filter: '',
   showLegends: false,
 };
@@ -327,6 +332,24 @@ function showPlaySheet(uid) {
   });
 }
 
+// Stratagem reference screen. The dataset is fetched once (lazily) and cached
+// in app.strats; failures degrade to empty sections with hints.
+async function showPlayStrats() {
+  app.play.view = 'strats';
+  if (!app.strats) {
+    dom.playBody.innerHTML = '<p class="hint">Loading stratagems…</p>';
+    try {
+      app.strats = buildStratIndex(await loadStratagemData());
+    } catch (e) {
+      console.warn('[app] stratagem load failed', e);
+      app.strats = { core: [], byDet: new Map() };
+    }
+    if (app.play.view !== 'strats') return; // user navigated away while loading
+  }
+  const vm = resolveArmyStratagems(app.strats, roster.getState().detachments);
+  ui.renderPlayStratagems(dom.playBody, vm, { onBack: showPlayGrid });
+}
+
 function exitPlayMode() {
   ui.closePlayMode();
   app.play.view = 'grid';
@@ -486,9 +509,10 @@ function wireEvents() {
   dom.editModal.addEventListener('click', (e) => { if (e.target === dom.editModal) ui.closeEditModal(); });
   dom.btnPlay.addEventListener('click', enterPlayMode);
   dom.playClose.addEventListener('click', exitPlayMode);
+  dom.playStrats.addEventListener('click', showPlayStrats);
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || dom.playOverlay.classList.contains('hidden')) return;
-    if (app.play.view === 'sheet') showPlayGrid();
+    if (app.play.view === 'sheet' || app.play.view === 'strats') showPlayGrid();
     else exitPlayMode();
   });
   dom.btnCopy.addEventListener('click', async () => {
