@@ -349,6 +349,8 @@ function showPlaySheet(uid) {
     partner: buildAttachVM().partnerLabel.get(uid) || null,
     onPartner: showPlaySheet,
     dets: detCtx(),
+    // id → full enhancement (carries the rules text the entry doesn't store)
+    enhById: new Map(currentEnhancements().map((e) => [e.id, e])),
   });
 }
 
@@ -435,10 +437,10 @@ async function selectFaction(file) {
 
 // ---- print -----------------------------------------------------------------
 
-// Build the printable document (datasheet pages grouped by unit + attached
-// leaders, a stratagems page, a detachment-rules page) then open the browser
-// print dialog. `#print-root` is hidden on screen and revealed only by the
-// print stylesheet.
+// Build the printable document — one page per army unit (attached leaders/
+// support share their host's page) plus a stratagems page — then open the
+// browser print dialog. `#print-root` is hidden on screen and revealed only by
+// the print stylesheet.
 async function printArmy() {
   const state = roster.getState();
   if (!state.entries.length) {
@@ -448,8 +450,14 @@ async function printArmy() {
   const label = dom.btnPrint.textContent;
   dom.btnPrint.disabled = true;
   dom.btnPrint.textContent = 'Preparing…';
-  await ensureStrats();
-  const stratVm = resolveArmyStratagems(app.strats, state.detachments);
+  try {
+    // Stratagem data loads from the network on first use; cap the wait so a slow
+    // or offline fetch degrades to an empty section rather than blocking print.
+    await Promise.race([ensureStrats(), new Promise((r) => setTimeout(r, 8000))]);
+  } finally {
+    dom.btnPrint.disabled = false;
+    dom.btnPrint.textContent = label;
+  }
   ui.renderPrint(dom.printRoot, {
     heading: state.faction ? state.faction.label : 'Army',
     sub: `${roster.total()} / ${state.limit} pts · ${state.entries.length} unit(s)`,
@@ -457,11 +465,10 @@ async function printArmy() {
     unitById: new Map(app.units.map((u) => [u.id, u])),
     attach: buildAttachVM(),
     dets: detCtx(),
-    detachments: state.detachments,
-    stratVm,
+    // id → full enhancement (carries the rules text the entry doesn't store)
+    enhById: new Map(currentEnhancements().map((e) => [e.id, e])),
+    stratVm: resolveArmyStratagems(app.strats, state.detachments),
   });
-  dom.btnPrint.disabled = false;
-  dom.btnPrint.textContent = label;
   window.print();
 }
 

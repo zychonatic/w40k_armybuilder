@@ -619,8 +619,12 @@ function rulesBlock(rules) {
   return `<div class="section-label">Rules</div><div class="rule-list">${chips}</div>`;
 }
 
-export function renderPlayDatasheet(bodyEl, entry, unit, { onBack, partner, onPartner, dets }) {
+export function renderPlayDatasheet(bodyEl, entry, unit, { onBack, partner, onPartner, dets, enhById }) {
   const sizeStr = entry.modelCount ? ` · ×${entry.modelCount}` : '';
+  const enh = entry.enhancementId && enhById ? enhById.get(entry.enhancementId) : null;
+  // When the enhancement's full text is shown, drop it from the plain wargear
+  // list so it isn't listed twice.
+  const opts = enh ? (entry.options || []).filter((o) => o.group !== 'Enhancement') : entry.options;
   let body;
   if (unit) {
     body = `
@@ -646,7 +650,8 @@ export function renderPlayDatasheet(bodyEl, entry, unit, { onBack, partner, onPa
       </div>
       ${partnerLine}
       ${body}
-      ${selectedOptionsBlock(entry.options)}
+      ${assignedEnhancementBlock(enh)}
+      ${selectedOptionsBlock(opts)}
     </div>`;
   bodyEl.querySelector('.play-back').addEventListener('click', onBack);
   const partnerBtn = bodyEl.querySelector('.ds-partner');
@@ -752,10 +757,28 @@ export function renderPlayStratagems(bodyEl, vm, { onBack }) {
 
 // ---- print -----------------------------------------------------------------
 
+// An assigned enhancement's name + rules text, shown as its own block. `enh` is
+// the full detachment enhancement ({ name, cost, text }); a roster entry only
+// stores its id, so it's resolved via the enhById map the caller passes. Shared
+// by the play-mode datasheet and the print sheet.
+function assignedEnhancementBlock(enh) {
+  if (!enh) return '';
+  const cost = enh.cost ? ` <span class="o-cost">+${enh.cost}</span>` : '';
+  return `<div class="section-label">Enhancement</div>
+    <div class="ability"><div class="a-name">${esc(enh.name)}${cost}</div>`
+    + (enh.text ? `<div class="a-text">${esc(enh.text)}</div>` : '')
+    + '</div>';
+}
+
 // One unit's datasheet, static (no interactive buttons). Mirrors the play-mode
-// datasheet body, reusing the same stat/weapon/ability helpers.
-function printDatasheetHtml(entry, unit, dets) {
+// datasheet body, reusing the same stat/weapon/ability helpers. `enhById` maps
+// enhancement id → full enhancement so an assigned enhancement can show its text.
+function printDatasheetHtml(entry, unit, dets, enhById) {
   const sizeStr = entry.modelCount ? ` · ×${entry.modelCount}` : '';
+  const enh = entry.enhancementId && enhById ? enhById.get(entry.enhancementId) : null;
+  // When we can show the enhancement's full text, drop it from the plain
+  // wargear list to avoid listing it twice.
+  const opts = enh ? (entry.options || []).filter((o) => o.group !== 'Enhancement') : entry.options;
   const body = unit
     ? `${statTable(unit.statlines)}
        ${keywordChips(unit)}
@@ -769,41 +792,15 @@ function printDatasheetHtml(entry, unit, dets) {
       <span class="role">${esc(entry.role)} · ${entry.points} pts${sizeStr}</span>
     </div>
     ${body}
-    ${selectedOptionsBlock(entry.options)}
+    ${assignedEnhancementBlock(enh)}
+    ${selectedOptionsBlock(opts)}
   </div>`;
 }
 
-// The detachment rules + enhancements shown on the final print page.
-function detachmentRulesHtml(detachments) {
-  if (!detachments.length) return '<p class="hint">No detachment selected.</p>';
-  let html = '';
-  for (const d of detachments) {
-    html += `<div class="print-det"><h3>${esc(d.name)}</h3>`;
-    if (d.rules.length) {
-      html += '<div class="section-label">Detachment Rule</div>';
-      for (const r of d.rules) {
-        html += `<div class="ability"><div class="a-name">${esc(r.name)}</div>`;
-        if (r.text) html += `<div class="a-text">${esc(r.text)}</div>`;
-        html += '</div>';
-      }
-    }
-    if (d.enhancements.length) {
-      html += '<div class="section-label">Enhancements</div>';
-      for (const e of d.enhancements) {
-        html += `<div class="opt-group"><h4><span>${esc(e.name)}</span><span class="o-cost">+${e.cost}</span></h4>`;
-        if (e.text) html += `<div class="a-text">${esc(e.text)}</div>`;
-        html += '</div>';
-      }
-    }
-    html += '</div>';
-  }
-  return html;
-}
-
-// Build the full print document: one page per unit (attached leaders/support
-// share their host's page), then a stratagems page, then a rules page.
-// `attach`/`dets` match the view-models used by play mode.
-export function renderPrint(el, { heading, sub, entries, unitById, attach, dets, detachments, stratVm }) {
+// Build the print document: one page per army unit (attached leaders/support
+// share their host's page), then a stratagems page. `attach`/`dets` match the
+// view-models used by play mode; `stratVm` is the resolved stratagem set.
+export function renderPrint(el, { heading, sub, entries, unitById, attach, dets, enhById, stratVm }) {
   const byRole = new Map();
   for (const e of entries) {
     if (attach.hiddenUids.has(e.uid)) continue; // attached leaders share a host page
@@ -814,9 +811,9 @@ export function renderPrint(el, { heading, sub, entries, unitById, attach, dets,
   let first = true;
   for (const [, es] of rolesInOrder(byRole)) {
     for (const e of es) {
-      let sheets = printDatasheetHtml(e, unitById.get(e.unitId), dets);
+      let sheets = printDatasheetHtml(e, unitById.get(e.unitId), dets, enhById);
       for (const l of attach.attachedLeaders.get(e.uid) || []) {
-        sheets += printDatasheetHtml(l, unitById.get(l.unitId), dets);
+        sheets += printDatasheetHtml(l, unitById.get(l.unitId), dets, enhById);
       }
       const head = first
         ? `<div class="print-army-head"><h2>${esc(heading)}</h2><span>${esc(sub)}</span></div>`
@@ -826,13 +823,12 @@ export function renderPrint(el, { heading, sub, entries, unitById, attach, dets,
     }
   }
   if (!pages) pages = '<div class="print-page"><p class="hint">Your army is empty.</p></div>';
-  pages += '<div class="print-page print-stratagems">'
-    + '<h2 class="print-page-title">Stratagems</h2>'
-    + stratSections(stratVm)
-    + `<p class="strat-attrib">${STRAT_ATTRIB}</p></div>`;
-  pages += '<div class="print-page">'
-    + '<h2 class="print-page-title">Detachment Rules &amp; Enhancements</h2>'
-    + detachmentRulesHtml(detachments) + '</div>';
+  if (stratVm) {
+    pages += '<div class="print-page print-stratagems">'
+      + '<h2 class="print-page-title">Stratagems</h2>'
+      + stratSections(stratVm)
+      + `<p class="strat-attrib">${STRAT_ATTRIB}</p></div>`;
+  }
   el.innerHTML = pages;
 }
 
