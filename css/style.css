@@ -416,3 +416,42 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   .play-datasheet .ds-head { flex-wrap: wrap; }
   .play-stratagems, .play-datasheet { padding: 0; }
 }
+
+/* ---- print ---- */
+.print-root { display: none; }
+
+@media print {
+  /* Show only the print document; hide the live app entirely. */
+  body > *:not(.print-root) { display: none !important; }
+  .print-root { display: block !important; }
+  body { background: #fff; color: #000; height: auto; min-height: 0; }
+
+  /* Re-map the dark theme to ink-on-paper for the reused components. */
+  .print-root {
+    --bg: #fff; --panel: #fff; --panel-2: #fff; --border: #999; --chip: #eee;
+    --text: #000; --muted: #444; --accent: #8a0f22; --accent-2: #6f5300;
+    color: #000; font-size: 10.5pt;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+
+  /* One printed page per unit group / section. */
+  .print-page { page-break-after: always; break-after: page; }
+  .print-page:last-child { page-break-after: auto; break-after: auto; }
+
+  .print-army-head { border-bottom: 2px solid var(--accent); margin-bottom: 12px; padding-bottom: 6px; }
+  .print-army-head h2 { margin: 0; font-size: 18pt; }
+  .print-army-head span { color: var(--muted); font-size: 11pt; }
+  .print-page-title { font-size: 16pt; margin: 0 0 12px; border-bottom: 2px solid var(--accent); padding-bottom: 6px; }
+
+  .print-ds { margin-bottom: 16px; page-break-inside: avoid; break-inside: avoid; }
+  .print-ds-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+  .print-ds-head h3 { margin: 0; font-size: 14pt; }
+  .print-det { margin-bottom: 16px; page-break-inside: avoid; break-inside: avoid; }
+  .print-det h3 { margin: 0 0 6px; font-size: 14pt; color: var(--accent); }
+
+  /* Keep atomic blocks from splitting across page boundaries. */
+  .stat-table, .weap-table, .strat-card, .ability, .opt-group { page-break-inside: avoid; break-inside: avoid; }
+  .stat-table, .weap-table { font-size: 9.5pt; }
+  .strat-section { margin-bottom: 16px; }
+  .chip { border: 1px solid var(--border); }
+}

@@ -25,8 +25,9 @@ const dom = {
   unitDetail: document.getElementById('unit-detail'),
   rosterList: document.getElementById('roster-list'),
   btnExport: document.getElementById('btn-export'),
-  btnExportUnits: document.getElementById('btn-export-units'),
+  btnPrint: document.getElementById('btn-print'),
   btnClear: document.getElementById('btn-clear'),
+  printRoot: document.getElementById('print-root'),
   modalClose: document.getElementById('modal-close'),
   btnCopy: document.getElementById('btn-copy'),
   modal: document.getElementById('modal'),
@@ -351,20 +352,26 @@ function showPlaySheet(uid) {
   });
 }
 
-// Stratagem reference screen. The dataset is fetched once (lazily) and cached
-// in app.strats; failures degrade to empty sections with hints.
-async function showPlayStrats() {
-  app.play.view = 'strats';
+// The stratagem dataset is fetched once (lazily) and cached in app.strats;
+// failures degrade to empty sections so callers can proceed unconditionally.
+async function ensureStrats() {
   if (!app.strats) {
-    dom.playBody.innerHTML = '<p class="hint">Loading stratagems…</p>';
     try {
       app.strats = buildStratIndex(await loadStratagemData());
     } catch (e) {
       console.warn('[app] stratagem load failed', e);
       app.strats = { core: [], byDet: new Map() };
     }
-    if (app.play.view !== 'strats') return; // user navigated away while loading
   }
+  return app.strats;
+}
+
+// Stratagem reference screen (play mode).
+async function showPlayStrats() {
+  app.play.view = 'strats';
+  if (!app.strats) dom.playBody.innerHTML = '<p class="hint">Loading stratagems…</p>';
+  await ensureStrats();
+  if (app.play.view !== 'strats') return; // user navigated away while loading
   const vm = resolveArmyStratagems(app.strats, roster.getState().detachments);
   ui.renderPlayStratagems(dom.playBody, vm, { onBack: showPlayGrid });
 }
@@ -426,88 +433,36 @@ async function selectFaction(file) {
   }
 }
 
-// ---- army datasheet export -------------------------------------------------
+// ---- print -----------------------------------------------------------------
 
-const STAT_COLS = ['M', 'T', 'Sv', 'W', 'LD', 'OC', 'InSv'];
-
-// Append a unit's full stats, weapons and abilities to `lines`.
-function pushDatasheet(lines, u) {
-  if (u.statlines && u.statlines.length) {
-    const multi = u.statlines.length > 1;
-    const header = (multi ? ['Model'] : []).concat(STAT_COLS);
-    lines.push('Stats:');
-    lines.push('  ' + header.join('\t'));
-    for (const s of u.statlines) {
-      const row = (multi ? [s.name || ''] : []).concat(STAT_COLS.map((c) => s[c] || '–'));
-      lines.push('  ' + row.join('\t'));
-    }
-  }
-  if (u.keywords && u.keywords.length) {
-    lines.push(`Keywords: ${u.keywords.join(', ')}`);
-  }
-  if (u.weapons && u.weapons.length) {
-    lines.push('Weapons:');
-    for (const w of u.weapons) {
-      const skill = w.BS || w.WS || '–';
-      const kw = w.keywords ? ` [${w.keywords}]` : '';
-      lines.push(`  • ${w.name} — Rng ${w.Range || '–'}, A ${w.A || '–'}, Sk ${skill}, S ${w.S || '–'}, AP ${w.AP || '–'}, D ${w.D || '–'}${kw}`);
-    }
-  }
-  if (u.abilities && u.abilities.length) {
-    lines.push('Abilities:');
-    for (const a of u.abilities) {
-      lines.push(`  • ${a.name}${a.text ? `: ${a.text}` : ''}`);
-    }
-  }
-}
-
-// Build a plain-text export of the units in the current army, each with its
-// selected options plus full stats, weapons and abilities.
-function exportArmyUnitsText() {
+// Build the printable document (datasheet pages grouped by unit + attached
+// leaders, a stratagems page, a detachment-rules page) then open the browser
+// print dialog. `#print-root` is hidden on screen and revealed only by the
+// print stylesheet.
+async function printArmy() {
   const state = roster.getState();
-  const label = state.faction ? state.faction.label : 'Army';
-  const lines = [];
-  lines.push(`=== ${label} — Army Datasheets — ${roster.total()} / ${state.limit} pts ===`);
-  if (state.detachments.length) {
-    lines.push(`Detachments (${roster.dpUsed()} DP): ${state.detachments.map((d) => d.name).join(', ')}`);
-  }
-  lines.push('');
-
   if (!state.entries.length) {
-    lines.push('Your army is empty — add units to the roster first.');
-    return lines.join('\n');
+    alert('Your army is empty — add units before printing.');
+    return;
   }
-
-  // Look up full unit data (stats/weapons/abilities) by unit id.
-  const unitById = new Map(app.units.map((u) => [u.id, u]));
-
-  // Group roster entries by role, mirroring the army panel.
-  const byRole = new Map();
-  for (const e of state.entries) {
-    if (!byRole.has(e.role)) byRole.set(e.role, []);
-    byRole.get(e.role).push(e);
-  }
-
-  for (const [role, entries] of byRole) {
-    lines.push(`########## ${role} ##########`);
-    lines.push('');
-    for (const e of entries) {
-      const sizeStr = e.modelCount ? ` ×${e.modelCount}` : '';
-      lines.push(`--- ${e.unitName}${sizeStr} — ${e.points} pts ---`);
-      if (e.options && e.options.length) {
-        lines.push('Selected options:');
-        for (const o of e.options) {
-          const grp = o.group ? `${o.group}: ` : '';
-          lines.push(`  • ${grp}${o.name}${o.cost ? ` (+${o.cost})` : ''}`);
-        }
-      }
-      const u = unitById.get(e.unitId);
-      if (u) pushDatasheet(lines, u);
-      else lines.push('(stats unavailable — load this unit\'s faction to include them)');
-      lines.push('');
-    }
-  }
-  return lines.join('\n').trimEnd();
+  const label = dom.btnPrint.textContent;
+  dom.btnPrint.disabled = true;
+  dom.btnPrint.textContent = 'Preparing…';
+  await ensureStrats();
+  const stratVm = resolveArmyStratagems(app.strats, state.detachments);
+  ui.renderPrint(dom.printRoot, {
+    heading: state.faction ? state.faction.label : 'Army',
+    sub: `${roster.total()} / ${state.limit} pts · ${state.entries.length} unit(s)`,
+    entries: state.entries,
+    unitById: new Map(app.units.map((u) => [u.id, u])),
+    attach: buildAttachVM(),
+    dets: detCtx(),
+    detachments: state.detachments,
+    stratVm,
+  });
+  dom.btnPrint.disabled = false;
+  dom.btnPrint.textContent = label;
+  window.print();
 }
 
 // ---- events ----------------------------------------------------------------
@@ -519,7 +474,7 @@ function wireEvents() {
   dom.unitFilter.addEventListener('input', (e) => { app.filter = e.target.value; renderList(); });
   dom.toggleLegends.addEventListener('change', (e) => { app.showLegends = e.target.checked; renderList(); });
   dom.btnExport.addEventListener('click', () => ui.openModal(roster.exportText()));
-  dom.btnExportUnits.addEventListener('click', () => ui.openModal(exportArmyUnitsText()));
+  dom.btnPrint.addEventListener('click', printArmy);
   dom.btnClear.addEventListener('click', () => {
     if (confirm('Clear the whole army?')) roster.clear();
   });

@@ -714,9 +714,9 @@ function stratCardHtml(s) {
   </div>`;
 }
 
-// Full-screen stratagem reference: a Core section (11e, everyone) plus one
-// section per selected detachment (10e fallback data, or a hint when unmatched).
-export function renderPlayStratagems(bodyEl, vm, { onBack }) {
+// The stratagem sections (per-detachment groups + Core), shared by the
+// full-screen play view and the print sheet. Returns inner HTML only.
+function stratSections(vm) {
   const section = (title, tag, strats, emptyHint) => {
     let h = `<div class="strat-section"><div class="strat-sec-head"><h3>${esc(title)}</h3>`
       + (tag ? `<span class="strat-sec-tag">${esc(tag)}</span>` : '') + '</div>';
@@ -725,7 +725,7 @@ export function renderPlayStratagems(bodyEl, vm, { onBack }) {
       : `<p class="hint">${esc(emptyHint)}</p>`;
     return h + '</div>';
   };
-  let html = '<div class="play-stratagems"><button class="play-back">← Back</button>';
+  let html = '';
   for (const g of vm.groups) {
     html += section(g.name, g.found ? '10th ed. data' : '', g.strats,
       'No 10th-edition stratagems match this detachment — likely a new 11th-edition detachment not yet in the dataset.');
@@ -735,10 +735,105 @@ export function renderPlayStratagems(bodyEl, vm, { onBack }) {
   }
   html += section('Core Stratagems', '11th ed. · everyone', vm.core,
     'Core stratagem data unavailable — check your connection.');
-  html += '<p class="strat-attrib">Stratagem data via Wahapedia, from the community card-generator dataset. '
-    + '10th-edition detachment rules are shown as a fallback until 11th-edition data is published.</p></div>';
-  bodyEl.innerHTML = html;
+  return html;
+}
+
+const STRAT_ATTRIB = 'Stratagem data via Wahapedia, from the community card-generator dataset. '
+  + '10th-edition detachment rules are shown as a fallback until 11th-edition data is published.';
+
+// Full-screen stratagem reference: a Core section (11e, everyone) plus one
+// section per selected detachment (10e fallback data, or a hint when unmatched).
+export function renderPlayStratagems(bodyEl, vm, { onBack }) {
+  bodyEl.innerHTML = '<div class="play-stratagems"><button class="play-back">← Back</button>'
+    + stratSections(vm)
+    + `<p class="strat-attrib">${STRAT_ATTRIB}</p></div>`;
   bodyEl.querySelector('.play-back').addEventListener('click', onBack);
+}
+
+// ---- print -----------------------------------------------------------------
+
+// One unit's datasheet, static (no interactive buttons). Mirrors the play-mode
+// datasheet body, reusing the same stat/weapon/ability helpers.
+function printDatasheetHtml(entry, unit, dets) {
+  const sizeStr = entry.modelCount ? ` · ×${entry.modelCount}` : '';
+  const body = unit
+    ? `${statTable(unit.statlines)}
+       ${keywordChips(unit)}
+       ${rulesBlock(visibleRules(unit, dets))}
+       ${weaponTable(weaponsForEntry(unit, entry))}
+       ${abilitiesBlock(visibleAbilities(unit, dets))}`
+    : '<p class="hint">Full datasheet unavailable — load this unit\'s faction to include stats.</p>';
+  return `<div class="print-ds">
+    <div class="ds-title print-ds-head">
+      <h3>${esc(entry.unitName)}</h3>
+      <span class="role">${esc(entry.role)} · ${entry.points} pts${sizeStr}</span>
+    </div>
+    ${body}
+    ${selectedOptionsBlock(entry.options)}
+  </div>`;
+}
+
+// The detachment rules + enhancements shown on the final print page.
+function detachmentRulesHtml(detachments) {
+  if (!detachments.length) return '<p class="hint">No detachment selected.</p>';
+  let html = '';
+  for (const d of detachments) {
+    html += `<div class="print-det"><h3>${esc(d.name)}</h3>`;
+    if (d.rules.length) {
+      html += '<div class="section-label">Detachment Rule</div>';
+      for (const r of d.rules) {
+        html += `<div class="ability"><div class="a-name">${esc(r.name)}</div>`;
+        if (r.text) html += `<div class="a-text">${esc(r.text)}</div>`;
+        html += '</div>';
+      }
+    }
+    if (d.enhancements.length) {
+      html += '<div class="section-label">Enhancements</div>';
+      for (const e of d.enhancements) {
+        html += `<div class="opt-group"><h4><span>${esc(e.name)}</span><span class="o-cost">+${e.cost}</span></h4>`;
+        if (e.text) html += `<div class="a-text">${esc(e.text)}</div>`;
+        html += '</div>';
+      }
+    }
+    html += '</div>';
+  }
+  return html;
+}
+
+// Build the full print document: one page per unit (attached leaders/support
+// share their host's page), then a stratagems page, then a rules page.
+// `attach`/`dets` match the view-models used by play mode.
+export function renderPrint(el, { heading, sub, entries, unitById, attach, dets, detachments, stratVm }) {
+  const byRole = new Map();
+  for (const e of entries) {
+    if (attach.hiddenUids.has(e.uid)) continue; // attached leaders share a host page
+    if (!byRole.has(e.role)) byRole.set(e.role, []);
+    byRole.get(e.role).push(e);
+  }
+  let pages = '';
+  let first = true;
+  for (const [, es] of rolesInOrder(byRole)) {
+    for (const e of es) {
+      let sheets = printDatasheetHtml(e, unitById.get(e.unitId), dets);
+      for (const l of attach.attachedLeaders.get(e.uid) || []) {
+        sheets += printDatasheetHtml(l, unitById.get(l.unitId), dets);
+      }
+      const head = first
+        ? `<div class="print-army-head"><h2>${esc(heading)}</h2><span>${esc(sub)}</span></div>`
+        : '';
+      pages += `<div class="print-page">${head}${sheets}</div>`;
+      first = false;
+    }
+  }
+  if (!pages) pages = '<div class="print-page"><p class="hint">Your army is empty.</p></div>';
+  pages += '<div class="print-page print-stratagems">'
+    + '<h2 class="print-page-title">Stratagems</h2>'
+    + stratSections(stratVm)
+    + `<p class="strat-attrib">${STRAT_ATTRIB}</p></div>`;
+  pages += '<div class="print-page">'
+    + '<h2 class="print-page-title">Detachment Rules &amp; Enhancements</h2>'
+    + detachmentRulesHtml(detachments) + '</div>';
+  el.innerHTML = pages;
 }
 
 export function openPlayMode(heading, sub) {

@@ -74,7 +74,7 @@
       <div class="roster-actions">
         <button id="btn-play">Play</button>
         <button id="btn-export">Export</button>
-        <button id="btn-export-units" title="Export all faction units with full stats and abilities">Export Units</button>
+        <button id="btn-print" title="Print datasheets, stratagems and rules">Print</button>
         <button id="btn-clear" class="danger">Clear</button>
       </div>
     </section>
@@ -119,6 +119,9 @@
     </div>
     <div id="play-body" class="play-body"></div>
   </div>
+
+  <!-- Print output: populated on demand by the Print button, shown only when printing -->
+  <div id="print-root" class="print-root" aria-hidden="true"></div>
 
   <script type="module" src="js/app.js"></script>
 </body>
