@@ -27,6 +27,12 @@
     </div>
   </header>
 
+  <!-- Mobile-only view switcher (hidden on desktop) -->
+  <nav class="mobile-tabs" aria-label="View">
+    <button data-tab="units" class="active">Units</button>
+    <button data-tab="army">Army</button>
+  </nav>
+
   <main class="layout">
     <!-- Left: unit browser -->
     <section class="panel browser">
@@ -44,7 +50,10 @@
 
     <!-- Middle: unit detail / config -->
     <section class="panel detail">
-      <div class="panel-head"><h2>Unit</h2></div>
+      <div class="panel-head">
+        <button class="detail-back" title="Back to units">‹ Back</button>
+        <h2>Unit</h2>
+      </div>
       <div id="unit-detail" class="unit-detail">
         <p class="hint">Click a unit to see its stats and wargear.</p>
       </div>

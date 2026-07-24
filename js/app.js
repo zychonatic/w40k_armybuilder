@@ -39,6 +39,8 @@ const dom = {
   playBody: document.getElementById('play-body'),
   playClose: document.getElementById('play-close'),
   playStrats: document.getElementById('play-strats'),
+  mobileTabs: document.querySelectorAll('.mobile-tabs button'),
+  detailBack: document.querySelector('.detail-back'),
 };
 
 const app = {
@@ -54,6 +56,21 @@ const app = {
   filter: '',
   showLegends: false,
 };
+
+// ---- mobile navigation -----------------------------------------------------
+// On phones the layout collapses to two tabs (Units / Army) with the unit
+// detail shown as a full-screen sheet. These body classes are inert on desktop
+// (the overlay/tab CSS lives only inside the phone media query).
+
+function setMobileTab(tab) {
+  document.body.classList.toggle('tab-units', tab === 'units');
+  document.body.classList.toggle('tab-army', tab === 'army');
+  dom.mobileTabs.forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+}
+
+// Open/close the mobile detail sheet.
+function openDetailSheet() { document.body.classList.add('detail-open'); }
+function closeDetailSheet() { document.body.classList.remove('detail-open'); }
 
 // ---- roster rendering ------------------------------------------------------
 
@@ -159,6 +176,7 @@ function showDetachment(id) {
   app.currentUnit = null;
   renderList();
   ui.renderDetachmentDetail(dom.unitDetail, det);
+  openDetailSheet();
 }
 
 function addDetachment(id) {
@@ -209,6 +227,7 @@ function showUnit(unitId) {
   app.selections = unit ? defaultSelections(unit) : {};
   renderDetail();
   renderList(); // update active highlight
+  openDetailSheet();
 }
 
 // Detachment context for gating detachment-specific abilities/rules: the ids
@@ -370,6 +389,7 @@ async function selectFaction(file) {
   app.currentUnit = null;
   app.selections = {};
   ui.clearDetailFoot();
+  closeDetailSheet();
   dom.unitDetail.innerHTML = '<p class="hint">Click a unit to see its stats and wargear.</p>';
   if (!file) {
     app.units = [];
@@ -507,6 +527,8 @@ function wireEvents() {
   dom.modal.addEventListener('click', (e) => { if (e.target === dom.modal) ui.closeModal(); });
   dom.editModalClose.addEventListener('click', ui.closeEditModal);
   dom.editModal.addEventListener('click', (e) => { if (e.target === dom.editModal) ui.closeEditModal(); });
+  dom.mobileTabs.forEach((b) => b.addEventListener('click', () => setMobileTab(b.dataset.tab)));
+  dom.detailBack.addEventListener('click', closeDetailSheet);
   dom.btnPlay.addEventListener('click', enterPlayMode);
   dom.playClose.addEventListener('click', exitPlayMode);
   dom.playStrats.addEventListener('click', showPlayStrats);
@@ -531,6 +553,7 @@ function wireEvents() {
 
 async function init() {
   const state = roster.load();
+  setMobileTab('units');
   ui.renderLimitSelect(dom.limitSelect, POINTS_PRESETS, state.limit);
   refreshRoster();
   wireEvents();
