@@ -37,19 +37,27 @@ single reactive store. Modules under `js/`, loaded via
 | `js/data.js` | Network layer. Fetches faction list, catalogue bundle (faction + linked libraries + game system), and MFM detachment points. |
 | `js/catalogue.js` | Parses raw BSData JSON into app-friendly objects. `buildIndex`, `listUnits`, `listDetachments`, `resolveUnit`, option-group/weapon/ability/statline extraction. This is the messy part — BSData is deeply nested with cross-file links. |
 | `js/engine.js` | **Pure** selection + points logic. No DOM, no I/O. Selection model, constraints (`validate`), `toggleOption`, `computePoints`, `defaultSelections`, `selectionsFromEntry`. |
-| `js/roster.js` | **The state store.** Holds `state`, mutating functions, `subscribe`/`emit`, `localStorage` persistence, and text export. |
+| `js/roster.js` | **The state store for the *active* list.** Holds `state`, mutating functions, `subscribe`/`emit`, and text export. `save()` writes into the active list's slot in `lists.js`; `loadRoster(roster)` swaps the active list in. |
+| `js/lists.js` | **The list collection.** Owns all saved lists + which is active, `localStorage` persistence under `LISTS_KEY`, the legacy-key migration, and list CRUD (`create`/`rename`/`duplicate`/`remove`/`setActive`), `summaries()` for the overview, and JSON `exportList`/`importList`. Lower-level than `roster.js` — no DOM, and it must not import `roster.js`. |
 | `js/ui.js` | **All DOM rendering.** Pure-ish `render*` functions take data + callbacks and write DOM. No app state lives here. |
 | `js/app.js` | **Bootstrap + orchestration.** Owns transient app state (`app.*`), wires UI callbacks to store mutations, drives faction loading. |
 
 ### Data flow (important)
 
 There is **one reactive path**: every store mutation ends with `emit()`, which
-notifies subscribers then `save()`s to `localStorage`. The sole subscriber is
-`refreshRoster` in `app.js`, registered via `roster.subscribe(...)`. So:
+notifies subscribers then `save()`s. The sole subscriber is `refreshRoster` in
+`app.js`, registered via `roster.subscribe(...)`. `save()` persists the active
+list's roster into the `lists.js` collection (not a flat key). So:
 
 ```
-store mutation → emit() → refreshRoster() → ui.renderRoster() + save()
+store mutation → emit() → refreshRoster() → ui.renderRoster() + save() → lists.saveActiveRoster()
 ```
+
+The app **starts on the overview** (`#overview-overlay`, a full-screen overlay
+like play mode). `openList(id)` in `app.js` calls `roster.loadRoster(...)` then
+`selectFaction(...)` to make the roster editable; the "‹ My Lists" button
+(`backToOverview`) returns there. A new list opens the builder empty — faction
+is picked in the top bar as usual.
 
 The **detail/config panel** (middle) re-renders imperatively — `app.js` calls
 `renderDetail()` / `renderEdit()` directly on user interaction; it is NOT driven
@@ -90,6 +98,9 @@ by the subscription.
   fetches still hit raw GitHub.
 - **BSData is gnarly:** entries link across files and nest arbitrarily.
   `catalogue.js` uses bounded-depth walks (`maxDepth`) — be careful changing them.
-- **localStorage schema:** `STORAGE_KEY` is versioned (`..._v1`). `roster.load()`
-  already migrates the pre-11e single-`detachment` field; add migrations there if
-  you change the entry shape.
+- **localStorage schema:** the live store is `LISTS_KEY`
+  (`w40k_armybuilder_lists_v1` — `{ activeId, lists:[{id,name,updatedAt,roster}] }`).
+  `STORAGE_KEY` (`..._roster_v1`) is the **legacy single-roster key**, read only
+  once by `lists.loadCollection()` to migrate an old roster into the first list
+  (this also carries the pre-11e single-`detachment` migration). Both keys are
+  versioned; add entry/roster-shape migrations in `lists.js` (`normalizeRoster`).

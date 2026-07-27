@@ -92,7 +92,13 @@ export function compareRoles(a, b) {
   return roleRank(a) - roleRank(b) || String(a).localeCompare(String(b));
 }
 
+// Single-roster key (pre-multi-list). Still read once for the one-time migration
+// into LISTS_KEY; new writes go to the list collection, not here.
 export const STORAGE_KEY = 'w40k_armybuilder_roster_v1';
+
+// Multi-list collection: { activeId, lists:[{ id, name, updatedAt, roster }] }.
+// `roster` has the same shape the single-roster key used to hold.
+export const LISTS_KEY = 'w40k_armybuilder_lists_v1';
 
 // Fallback faction list if the GitHub contents API is unavailable / rate-limited.
 // Value = filename in the repo; label is derived from it.

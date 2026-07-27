@@ -1,6 +1,6 @@
 // Bootstrap + orchestration.
 
-import { POINTS_PRESETS, dpBudget, normDetName } from './config.js';
+import { POINTS_PRESETS, DEFAULT_LIMIT, dpBudget, normDetName } from './config.js';
 import {
   loadFactionList, loadCatalogueBundle, loadDetachmentPoints, loadStratagemData,
 } from './data.js';
@@ -11,6 +11,7 @@ import {
   selectionsFromEntry,
 } from './engine.js';
 import * as roster from './roster.js';
+import * as lists from './lists.js';
 import * as ui from './ui.js';
 
 const dom = {
@@ -42,6 +43,12 @@ const dom = {
   playStrats: document.getElementById('play-strats'),
   mobileTabs: document.querySelectorAll('.mobile-tabs button'),
   detailBack: document.querySelector('.detail-back'),
+  overviewOverlay: document.getElementById('overview-overlay'),
+  overviewBody: document.getElementById('overview-body'),
+  btnLists: document.getElementById('btn-lists'),
+  btnNewList: document.getElementById('btn-new-list'),
+  btnImportList: document.getElementById('btn-import-list'),
+  importFile: document.getElementById('import-file'),
 };
 
 const app = {
@@ -392,6 +399,98 @@ function renderList() {
   });
 }
 
+// ---- list overview ---------------------------------------------------------
+
+function refreshOverview() {
+  ui.renderOverview(dom.overviewBody, lists.summaries(), {
+    onOpen: openList,
+    onRename: renameList,
+    onDuplicate: (id) => { lists.duplicate(id); refreshOverview(); },
+    onExport: exportListFile,
+    onDelete: deleteList,
+  });
+}
+
+// Load a saved list into the store and switch to the builder. `selectFaction`
+// reloads the catalogue so the restored roster is editable and detachment
+// controls repopulate; the final refreshRoster re-renders once app.units match.
+async function openList(id) {
+  const list = lists.find(id);
+  if (!list) return;
+  lists.setActive(id);
+  roster.loadRoster(list.roster);
+  app.currentUnit = null;
+  app.selections = {};
+  app.filter = '';
+  dom.unitFilter.value = '';
+  closeDetailSheet();
+  setMobileTab('units');
+  ui.closeOverview();
+  const state = roster.getState();
+  ui.renderLimitSelect(dom.limitSelect, POINTS_PRESETS, state.limit);
+  const file = state.faction && state.faction.file ? state.faction.file : '';
+  dom.factionSelect.value = file;
+  await selectFaction(file);
+  refreshRoster();
+}
+
+function newList() {
+  openList(lists.create('New Army'));
+}
+
+function backToOverview() {
+  roster.save(); // defensive — every mutation already persists via emit()
+  refreshOverview();
+  ui.openOverview();
+}
+
+function renameList(id) {
+  const list = lists.find(id);
+  const name = prompt('List name:', list ? list.name : '');
+  if (name && name.trim()) { lists.rename(id, name.trim()); refreshOverview(); }
+}
+
+function deleteList(id) {
+  const list = lists.find(id);
+  if (!list) return;
+  if (confirm(`Delete “${list.name}”? This cannot be undone.`)) {
+    lists.remove(id);
+    refreshOverview();
+  }
+}
+
+// Download a list as a .json file (fully client-side via a Blob URL).
+function exportListFile(id) {
+  const json = lists.exportList(id);
+  if (!json) return;
+  const list = lists.find(id);
+  const safe = (list ? list.name : 'army').replace(/[^a-z0-9._-]+/gi, '_') || 'army';
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${safe}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function importListFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      lists.importList(String(reader.result));
+      refreshOverview();
+    } catch (e) {
+      console.warn('[app] import failed', e);
+      alert('Could not import that file — it is not a valid army-list JSON.');
+    }
+  };
+  reader.readAsText(file);
+}
+
 // ---- faction loading -------------------------------------------------------
 
 async function selectFaction(file) {
@@ -491,6 +590,13 @@ function wireEvents() {
   dom.editModal.addEventListener('click', (e) => { if (e.target === dom.editModal) ui.closeEditModal(); });
   dom.mobileTabs.forEach((b) => b.addEventListener('click', () => setMobileTab(b.dataset.tab)));
   dom.detailBack.addEventListener('click', closeDetailSheet);
+  dom.btnLists.addEventListener('click', backToOverview);
+  dom.btnNewList.addEventListener('click', newList);
+  dom.btnImportList.addEventListener('click', () => dom.importFile.click());
+  dom.importFile.addEventListener('change', (e) => {
+    importListFile(e.target.files[0]);
+    e.target.value = ''; // allow re-importing the same file
+  });
   dom.btnPlay.addEventListener('click', enterPlayMode);
   dom.playClose.addEventListener('click', exitPlayMode);
   dom.playStrats.addEventListener('click', showPlayStrats);
@@ -514,21 +620,20 @@ function wireEvents() {
 // ---- init ------------------------------------------------------------------
 
 async function init() {
-  const state = roster.load();
+  lists.loadCollection(); // runs the one-time migration from the legacy single-roster key
   setMobileTab('units');
-  ui.renderLimitSelect(dom.limitSelect, POINTS_PRESETS, state.limit);
+  ui.renderLimitSelect(dom.limitSelect, POINTS_PRESETS, DEFAULT_LIMIT);
   refreshRoster();
   wireEvents();
 
+  // Start on the overview; a faction is loaded only once a list is opened.
+  refreshOverview();
+  ui.openOverview();
+
   ui.setStatus(dom.status, 'Loading factions…', true);
   app.factions = await loadFactionList();
-  ui.renderFactionSelect(dom.factionSelect, app.factions, state.faction ? state.faction.file : '');
+  ui.renderFactionSelect(dom.factionSelect, app.factions, '');
   ui.setStatus(dom.status, '', false);
-
-  // Auto-load the previously selected faction (so a restored roster is editable).
-  if (state.faction && state.faction.file) {
-    await selectFaction(state.faction.file);
-  }
 }
 
 init();

@@ -1,7 +1,8 @@
 // Army roster state: entries, totals, persistence, export.
 
-import { STORAGE_KEY, DEFAULT_LIMIT } from './config.js';
+import { DEFAULT_LIMIT } from './config.js';
 import { selectedOptions, currentSize, totalWithEnhancement } from './engine.js';
+import * as lists from './lists.js';
 
 let state = {
   faction: null, // { file, label }
@@ -170,33 +171,25 @@ export function total() {
 }
 
 // ---- persistence -----------------------------------------------------------
+// The store holds the *active* list's roster; persistence targets that list's
+// slot in the collection (js/lists.js), not a flat key. The pre-11e schema
+// migration now lives in lists.js (it wraps the legacy single roster).
 
 export function save() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch (e) {
-    console.warn('[roster] save failed', e);
-  }
+  lists.saveActiveRoster(state);
 }
 
-export function load() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      // Migrate the pre-11e single `detachment` field to the `detachments` list.
-      let detachments = Array.isArray(parsed.detachments) ? parsed.detachments : [];
-      if (!detachments.length && parsed.detachment) detachments = [parsed.detachment];
-      state = {
-        faction: parsed.faction || null,
-        detachments: detachments.map((d) => ({ ...d, dp: d.dp || 1 })),
-        limit: parsed.limit || DEFAULT_LIMIT,
-        entries: Array.isArray(parsed.entries) ? parsed.entries : [],
-      };
-    }
-  } catch (e) {
-    console.warn('[roster] load failed', e);
-  }
+// Replace the live state with a given list's roster (deep-cloned so later edits
+// can't mutate the stored copy) and re-render. Used when opening/switching lists.
+export function loadRoster(roster) {
+  const src = roster || {};
+  state = {
+    faction: src.faction || null,
+    detachments: Array.isArray(src.detachments) ? src.detachments.map((d) => ({ ...d })) : [],
+    limit: src.limit || DEFAULT_LIMIT,
+    entries: Array.isArray(src.entries) ? src.entries.map((e) => ({ ...e })) : [],
+  };
+  emit();
   return state;
 }
 

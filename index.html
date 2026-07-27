@@ -10,6 +10,7 @@
   <header class="topbar">
     <h1>⚔️ W40k Army Builder</h1>
     <div class="topbar-controls">
+      <button id="btn-lists" class="secondary" title="Back to your army lists">‹ My Lists</button>
       <label>Faction
         <select id="faction-select">
           <option value="">Loading factions…</option>
@@ -122,6 +123,19 @@
 
   <!-- Print output: populated on demand by the Print button, shown only when printing -->
   <div id="print-root" class="print-root" aria-hidden="true"></div>
+
+  <!-- Overview / start page: manage all saved army lists. Shown by default. -->
+  <div id="overview-overlay" class="overview-overlay">
+    <div class="overview-head">
+      <h2>⚔️ My Army Lists</h2>
+      <div class="overview-head-actions">
+        <button id="btn-new-list">＋ New list</button>
+        <button id="btn-import-list" class="secondary">Import</button>
+      </div>
+    </div>
+    <div id="overview-body" class="overview-body"></div>
+    <input id="import-file" type="file" accept="application/json,.json" hidden />
+  </div>
 
   <script type="module" src="js/app.js"></script>
 </body>

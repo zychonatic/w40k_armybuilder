@@ -840,3 +840,66 @@ export function openPlayMode(heading, sub) {
 export function closePlayMode() {
   document.getElementById('play-overlay').classList.add('hidden');
 }
+
+// ---- overview / start page -------------------------------------------------
+
+// Coarse "edited N ago" label from a millisecond timestamp.
+function relTime(ts) {
+  if (!ts) return '';
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return new Date(ts).toLocaleDateString();
+}
+
+// Render the list-management overview. `summaries` is the light metadata list
+// from lists.summaries(); callbacks receive the list id.
+export function renderOverview(bodyEl, summaries, {
+  onOpen, onRename, onDuplicate, onExport, onDelete,
+}) {
+  if (!summaries.length) {
+    bodyEl.innerHTML = '<p class="hint">No lists yet — create your first army with “＋ New list”.</p>';
+    return;
+  }
+  bodyEl.innerHTML = summaries.map((l) => {
+    const faction = l.factionLabel ? esc(l.factionLabel) : 'No faction';
+    const units = `${l.unitCount} unit${l.unitCount === 1 ? '' : 's'}`;
+    const dets = l.detachmentCount ? ` · ${l.detachmentCount} detachment${l.detachmentCount === 1 ? '' : 's'}` : '';
+    return `<div class="list-card">
+      <button class="lc-open" data-id="${esc(l.id)}">
+        <span class="lc-name">${esc(l.name)}</span>
+        <span class="lc-meta">${faction} · ${l.total} / ${l.limit} pts · ${units}${dets}</span>
+        <span class="lc-time">edited ${esc(relTime(l.updatedAt))}</span>
+      </button>
+      <div class="lc-actions">
+        <button class="secondary" data-action="rename" data-id="${esc(l.id)}">Rename</button>
+        <button class="secondary" data-action="duplicate" data-id="${esc(l.id)}">Duplicate</button>
+        <button class="secondary" data-action="export" data-id="${esc(l.id)}">Export</button>
+        <button class="danger" data-action="delete" data-id="${esc(l.id)}">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  bodyEl.querySelectorAll('.lc-open').forEach((btn) => {
+    btn.addEventListener('click', () => onOpen(btn.dataset.id));
+  });
+  const actions = { rename: onRename, duplicate: onDuplicate, export: onExport, delete: onDelete };
+  bodyEl.querySelectorAll('.lc-actions button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const fn = actions[btn.dataset.action];
+      if (fn) fn(btn.dataset.id);
+    });
+  });
+}
+
+export function openOverview() {
+  document.getElementById('overview-overlay').classList.remove('hidden');
+}
+export function closeOverview() {
+  document.getElementById('overview-overlay').classList.add('hidden');
+}
