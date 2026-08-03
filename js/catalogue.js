@@ -502,6 +502,14 @@ function entryDescription(entry) {
 // Abilities Description characteristic within a node's subtree.
 function findRuleText(node, depth = 0) {
   if (!node || depth > 3) return '';
+  // An infoLink often points *straight at* the rule (`description` on the node
+  // itself — Necrons, Sororitas, World Eaters) or at a profile (Description
+  // characteristic), so check the node before descending into children.
+  if (node.description) return String(node.description);
+  if (node.characteristics) {
+    const own = getChar(node, 'Description');
+    if (own) return own;
+  }
   for (const r of node.rules || []) if (r.description) return r.description;
   for (const p of node.profiles || []) {
     if (p.characteristics) {
