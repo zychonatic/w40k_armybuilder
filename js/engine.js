@@ -86,6 +86,87 @@ export function selectionsFromEntry(unit, entry) {
   return sel;
 }
 
+// Split an entry's reachable weapon names by provenance:
+//   optional — names a real wargear option can grant
+//   selected — names granted by the options actually chosen
+//
+// `model`-type options are skipped entirely: BSData nests a squad's constituent
+// model inside the size/count group, and that model aggregates *every* weapon it
+// can reach — including both sides of a nested either/or choice (e.g. an
+// Immortal's Gauss blaster AND Tesla carbine). Gating on the real choice group's
+// selection is what distinguishes the two; the model's fixed weapons (e.g. a
+// Close combat weapon) fall through as "not offered by any option" and stay.
+function scanEntryWeapons(unit, entry) {
+  const optional = new Set();
+  const selected = new Set();
+  const selections = selectionsFromEntry(unit, entry);
+  for (const g of unit.optionGroups) {
+    const chosen = selections[g.id] || [];
+    for (const opt of g.options) {
+      if (opt.type === 'model') continue;
+      for (const w of opt.weapons || []) {
+        optional.add(w.name);
+        if (chosen.includes(opt.id)) selected.add(w.name);
+      }
+    }
+  }
+  return { optional, selected };
+}
+
+// Narrow a unit's full weapon list down to what THIS roster entry actually
+// carries: weapons offered by a real wargear option appear only when that option
+// was selected during army building; any weapon not offered by such an option is
+// base kit and always shown.
+export function weaponsForEntry(unit, entry) {
+  const { optional, selected } = scanEntryWeapons(unit, entry);
+  return unit.weapons.filter((w) => selected.has(w.name) || !optional.has(w.name));
+}
+
+// Weapon names an entry could only have via a wargear option — i.e. NOT base kit.
+export function optionalWeaponNames(unit, entry) {
+  return scanEntryWeapons(unit, entry).optional;
+}
+
+// Model-type option names across the entry's size groups — i.e. the distinct kinds
+// of model the squad is built from ("Intercessor Sergeant", "Intercessor", …).
+function squadModelNames(unit) {
+  const names = new Set();
+  for (const g of unit.optionGroups) {
+    for (const opt of g.options) if (opt.type === 'model') names.add(opt.name);
+  }
+  return names;
+}
+
+// How many models carry each weapon. BSData records no weapon multiplicity at all,
+// so this is a documented guess the UI lets the user override — never trust it as
+// fact. A wargear group's name is path-prefixed with the model it belongs to
+// ("Intercessor Sergeant · Weapon 1"), which is the only signal available:
+//   - base kit, granted by no option        -> every model ("Close combat weapon")
+//   - granted under a *named* sub-model, in
+//     a squad built from several kinds      -> 1 (it's the sergeant's gun)
+//   - granted under the squad's only model
+//     type, or by an unprefixed choice      -> every model ("Immortal · Weapons")
+// Returns Map(weaponName -> model count).
+export function weaponModelCounts(unit, entry) {
+  const all = Math.max(1, Number(entry.modelCount) || 1);
+  const modelNames = squadModelNames(unit);
+  const selections = selectionsFromEntry(unit, entry);
+  const counts = new Map();
+  for (const g of unit.optionGroups) {
+    const chosen = selections[g.id] || [];
+    const owner = g.name.includes(' · ') ? g.name.split(' · ')[0].trim() : '';
+    // A prefix naming one of several model kinds scopes the group to that model.
+    const perModel = owner && modelNames.size > 1 && modelNames.has(owner);
+    for (const opt of g.options) {
+      if (opt.type === 'model' || !chosen.includes(opt.id)) continue;
+      for (const w of opt.weapons || []) counts.set(w.name, perModel ? 1 : all);
+    }
+  }
+  // Anything left is base kit: carried by every model.
+  for (const w of unit.weapons) if (!counts.has(w.name)) counts.set(w.name, all);
+  return counts;
+}
+
 // Validate selections against group min/max constraints.
 // Returns [{ groupId, name, message }] for any violations.
 export function validate(unit, selections) {

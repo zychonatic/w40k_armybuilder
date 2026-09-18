@@ -3,7 +3,7 @@
 import { factionLabel, compareRoles } from './config.js';
 import {
   computePoints, selectedOptions, isSingleChoice, validate, currentSize, sizeCost,
-  ENH_KEY, isCharacter, selectedEnhancement, totalWithEnhancement, selectionsFromEntry,
+  ENH_KEY, isCharacter, selectedEnhancement, totalWithEnhancement, weaponsForEntry,
 } from './engine.js';
 
 function esc(s) {
@@ -557,36 +557,6 @@ export function renderPlayGrid(bodyEl, entries, unitById, { onSelect, attach }) 
   });
 }
 
-// Full-screen datasheet for one entry. `unit` may be null when its faction
-// isn't loaded — then only the chosen options and a hint are shown.
-// Narrow a unit's full weapon list down to what THIS roster entry actually
-// carries: weapons offered by a real wargear option appear only when that option
-// was selected during army building; any weapon not offered by such an option is
-// base kit and always shown.
-//
-// `model`-type options are skipped entirely: BSData nests a squad's constituent
-// model inside the size/count group, and that model aggregates *every* weapon it
-// can reach — including both sides of a nested either/or choice (e.g. an
-// Immortal's Gauss blaster AND Tesla carbine). Gating on the real choice group's
-// selection is what distinguishes the two; the model's fixed weapons (e.g. a
-// Close combat weapon) fall through as "not offered by any option" and stay.
-function weaponsForEntry(unit, entry) {
-  const optional = new Set();   // weapon names a real wargear option can grant
-  const selected = new Set();   // weapon names granted by the chosen options
-  const selections = selectionsFromEntry(unit, entry);
-  for (const g of unit.optionGroups) {
-    const chosen = selections[g.id] || [];
-    for (const opt of g.options) {
-      if (opt.type === 'model') continue;
-      for (const w of opt.weapons || []) {
-        optional.add(w.name);
-        if (chosen.includes(opt.id)) selected.add(w.name);
-      }
-    }
-  }
-  return unit.weapons.filter((w) => selected.has(w.name) || !optional.has(w.name));
-}
-
 // Whether an ability/rule is gated out by the army's detachment choice (e.g. a
 // C'tan Shard's Distortion Fields (Aura), which is Pantheon-of-Woe-only). `dets`
 // is { selected, all } — Sets of detachment ids currently selected / offered by
@@ -619,6 +589,8 @@ function rulesBlock(rules) {
   return `<div class="section-label">Rules</div><div class="rule-list">${chips}</div>`;
 }
 
+// Full-screen datasheet for one entry. `unit` may be null when its faction
+// isn't loaded — then only the chosen options and a hint are shown.
 export function renderPlayDatasheet(bodyEl, entry, unit, { onBack, partner, onPartner, dets, enhById }) {
   const sizeStr = entry.modelCount ? ` · ×${entry.modelCount}` : '';
   const enh = entry.enhancementId && enhById ? enhById.get(entry.enhancementId) : null;
@@ -753,6 +725,171 @@ export function renderPlayStratagems(bodyEl, vm, { onBack }) {
     + stratSections(vm)
     + `<p class="strat-attrib">${STRAT_ATTRIB}</p></div>`;
   bodyEl.querySelector('.play-back').addEventListener('click', onBack);
+}
+
+// ---- play mode: damage calculator ------------------------------------------
+
+const HIT_MODS = [[1, '+1'], [0, '+0'], [-1, '−1']];
+const REROLLS = [['none', '—'], ['ones', '1s'], ['all', 'All']];
+// Fields that belong to `mods` rather than the target profile.
+const MOD_FIELDS = new Set(['hitMod', 'woundMod', 'rerollHits', 'rerollWounds', 'inCover', 'halfRange']);
+
+function optionList(pairs, current) {
+  return pairs.map(([v, label]) => (
+    `<option value="${esc(v)}"${String(v) === String(current) ? ' selected' : ''}>${esc(label)}</option>`
+  )).join('');
+}
+
+function calcNumField(label, field, value, extra = '') {
+  return `<label>${esc(label)}
+    <input type="number" data-calc="${esc(field)}" value="${esc(value)}" ${extra} /></label>`;
+}
+
+// One row per weapon the entry carries: enabled flag, how many models fire it,
+// then the profile read-only in the same column order as the datasheet.
+function calcWeaponRows(weapons) {
+  if (!weapons.length) return '<p class="hint">This unit has no weapon profiles.</p>';
+  let html = '<table class="weap-table calc-weap"><thead><tr>'
+    + '<th></th><th>#</th><th>Weapon</th><th>Range</th><th>A</th><th>Skill</th>'
+    + '<th>S</th><th>AP</th><th>D</th><th>Keywords</th>'
+    + '</tr></thead><tbody>';
+  for (const r of weapons) {
+    const w = r.w;
+    html += `<tr class="${r.on ? '' : 'off'}">
+      <td><input type="checkbox" data-calc="won" data-key="${esc(r.key)}"${r.on ? ' checked' : ''} /></td>
+      <td><input type="number" class="calc-num" min="0" step="1" data-calc="wmodels"
+                 data-key="${esc(r.key)}" value="${esc(r.models)}" /></td>
+      <td class="wname">${esc(w.name)}</td>
+      <td>${esc(w.Range || '–')}</td>
+      <td>${esc(w.A || '–')}</td>
+      <td>${esc(w.BS || w.WS || '–')}</td>
+      <td>${esc(w.S || '–')}</td>
+      <td>${esc(w.AP || '–')}</td>
+      <td>${esc(w.D || '–')}</td>
+      <td class="calc-kw">${esc(w.keywords || '')}</td>
+    </tr>`;
+  }
+  return `${html}</tbody></table>`;
+}
+
+// Render the calculator SHELL. The inputs are written exactly once: every
+// keystroke patches only `.calc-results` via renderCalcResults, because a full
+// innerHTML swap (how every other play view re-renders) would blow away focus
+// and the caret in the field being typed in.
+export function renderPlayCalculator(bodyEl, vm, {
+  onBack, onPickAttacker, onWeaponToggle, onWeaponModels, onTargetChange, onModChange,
+}) {
+  const t = vm.target;
+  const m = vm.mods;
+  const units = vm.entries.map((e) => (
+    `<option value="${esc(e.uid)}"${e.uid === vm.attackerUid ? ' selected' : ''}>${esc(e.label)}</option>`
+  )).join('');
+
+  const attacker = vm.entries.length
+    ? `<select class="calc-unit" data-calc="attacker">${units}</select>
+       ${vm.attackerHint ? `<p class="hint">${esc(vm.attackerHint)}</p>` : calcWeaponRows(vm.weapons)}
+       ${vm.attackerHint ? '' : '<p class="hint">BSData records no per-weapon counts, so “#” is a guess — base kit assumes every model, an upgrade assumes one. Correct it to match your models.</p>'}`
+    : '<p class="hint">Add some units to your army first.</p>';
+
+  bodyEl.innerHTML = `<div class="play-calculator">
+    <button class="play-back">← Back</button>
+
+    <section class="calc-sec">
+      <div class="section-label">Attacker</div>
+      ${attacker}
+    </section>
+
+    <section class="calc-sec">
+      <div class="section-label">Target</div>
+      <div class="calc-grid">
+        ${calcNumField('Toughness', 'T', t.T, 'min="1"')}
+        ${calcNumField('Wounds', 'W', t.W, 'min="1"')}
+        ${calcNumField('Save', 'sv', t.sv, 'min="2" max="7"')}
+        ${calcNumField('Invuln', 'inv', t.inv, 'min="2" max="6"')}
+        ${calcNumField('Feel No Pain', 'fnp', t.fnp, 'min="2" max="6"')}
+        ${calcNumField('Models', 'models', t.models, 'min="1"')}
+        <label class="calc-wide">Keywords (for Anti-X)
+          <input type="text" data-calc="keywords" value="${esc(t.keywords)}"
+                 placeholder="Infantry, Vehicle, Fly…" /></label>
+      </div>
+
+      <div class="section-label">Modifiers</div>
+      <div class="calc-grid">
+        <label>Hit<select data-calc="hitMod">${optionList(HIT_MODS, m.hitMod)}</select></label>
+        <label>Wound<select data-calc="woundMod">${optionList(HIT_MODS, m.woundMod)}</select></label>
+        <label>Re-roll hits<select data-calc="rerollHits">${optionList(REROLLS, m.rerollHits)}</select></label>
+        <label>Re-roll wounds<select data-calc="rerollWounds">${optionList(REROLLS, m.rerollWounds)}</select></label>
+        <label class="calc-check"><input type="checkbox" data-calc="inCover"${m.inCover ? ' checked' : ''} /> In cover</label>
+        <label class="calc-check"><input type="checkbox" data-calc="halfRange"${m.halfRange ? ' checked' : ''} /> Half range</label>
+      </div>
+    </section>
+
+    <section class="calc-sec calc-results"></section>
+  </div>`;
+
+  const root = bodyEl.querySelector('.play-calculator');
+  root.querySelector('.play-back').addEventListener('click', onBack);
+  // One delegated listener: `input` fires for text, number, select and checkbox,
+  // so there is nothing to re-bind and nothing to tear down (the next view swap
+  // discards the whole subtree anyway).
+  root.addEventListener('input', (ev) => {
+    const el = ev.target;
+    const f = el.dataset ? el.dataset.calc : null;
+    if (!f) return;
+    if (f === 'attacker') onPickAttacker(el.value);
+    else if (f === 'won') onWeaponToggle(el.dataset.key, el.checked);
+    else if (f === 'wmodels') onWeaponModels(el.dataset.key, el.value);
+    else if (MOD_FIELDS.has(f)) onModChange(f, el.type === 'checkbox' ? el.checked : el.value);
+    else onTargetChange(f, el.value);
+  });
+
+  renderCalcResults(root.querySelector('.calc-results'), vm.result);
+}
+
+function calcStep(label, value, note) {
+  return `<div class="calc-step"><span class="cs-label">${esc(label)}</span>
+    <span class="cs-val">${esc(value)}</span>
+    ${note ? `<span class="cs-note">${esc(note)}</span>` : ''}</div>`;
+}
+
+const n1 = (x) => (Math.round(x * 10) / 10).toFixed(1);
+
+// Patch just the results region — called on every input change.
+export function renderCalcResults(el, res) {
+  if (!el) return;
+  if (!res || !res.rows.length) {
+    el.innerHTML = '<div class="section-label">Results</div>'
+      + '<p class="hint">Enable at least one weapon to see a result.</p>';
+    return;
+  }
+  const t = res.totals;
+  const slain = res.slain;
+  const wipe = slain.wipeChance;
+  const wipeStr = wipe > 0 && wipe < 0.005 ? '<1%' : `${Math.round(wipe * 100)}%`;
+  const unresolved = res.rows.filter((r) => r.unresolved).map((r) => r.name);
+
+  el.innerHTML = `<div class="section-label">Results</div>
+    <div class="calc-steps">
+      ${calcStep('Attacks', n1(t.attacks))}
+      ${calcStep('Hits', n1(t.hits), t.sustained > 0.05 ? `incl. ${n1(t.sustained)} sustained` : '')}
+      ${calcStep('Wounds', n1(t.wounds))}
+      ${calcStep('Failed saves', n1(t.unsaved))}
+      ${calcStep('Damage', n1(t.damage), res.target.fnp ? 'after FNP' : '')}
+    </div>
+    <div class="calc-headline">
+      <div><span class="ch-big">${esc(n1(slain.expected))}</span><span class="ch-sub">models slain of ${esc(res.target.models)}</span></div>
+      <div><span class="ch-big">${esc(wipeStr)}</span><span class="ch-sub">chance to wipe the unit</span></div>
+    </div>
+    ${res.rows.length > 1 ? `<table class="weap-table calc-break"><thead><tr>
+      <th>Weapon</th><th>Attacks</th><th>Hits</th><th>Wounds</th><th>Failed saves</th><th>Damage</th>
+      </tr></thead><tbody>${res.rows.map((r) => `<tr>
+        <td class="wname">${esc(r.models)}× ${esc(r.name)}</td>
+        <td>${esc(n1(r.exp.attacks))}</td><td>${esc(n1(r.exp.hits))}</td>
+        <td>${esc(n1(r.exp.wounds))}</td><td>${esc(n1(r.exp.unsaved))}</td>
+        <td>${esc(n1(r.exp.damage))}</td></tr>`).join('')}</tbody></table>` : ''}
+    ${unresolved.length ? `<p class="hint">No usable BS/WS on: ${esc(unresolved.join(', '))} — excluded.</p>` : ''}
+    ${res.unmodelled.length ? `<p class="hint">Not applied: ${esc(res.unmodelled.join(', '))}. Everything else on these profiles is included.</p>` : ''}
+    ${slain.approx ? '<p class="hint">Attack counts approximated to keep this responsive.</p>' : ''}`;
 }
 
 // ---- print -----------------------------------------------------------------

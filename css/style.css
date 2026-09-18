@@ -296,7 +296,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* play mode: stratagems */
 .play-head-actions { display: flex; align-items: center; gap: 10px; }
-.play-strats {
+/* Outlined-gold header actions (Stratagems, Damage) — set apart from the solid
+   red Exit so the destructive-ish action stays visually distinct. */
+.play-act {
   background: var(--panel-2); color: var(--accent-2);
   border: 1px solid var(--accent-2); font-size: 13px;
 }
@@ -337,6 +339,55 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .spinner { display:inline-block; width:12px; height:12px; border:2px solid var(--muted); border-top-color: var(--accent); border-radius:50%; animation: spin 0.8s linear infinite; vertical-align:-1px; margin-right:6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* play mode: damage calculator */
+.play-calculator { max-width: 820px; margin: 0 auto; }
+.play-calculator > .play-back { margin-bottom: 14px; }
+.calc-sec { margin-bottom: 20px; }
+.calc-unit { width: 100%; max-width: 420px; margin-bottom: 4px; }
+.calc-weap td:first-child, .calc-weap th:first-child { width: 26px; text-align: center; }
+.calc-weap .calc-kw { font-size: 11px; color: var(--muted); }
+.calc-weap tr.off td { opacity: 0.45; }
+.calc-num {
+  width: 58px; background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-size: 13px;
+}
+.calc-num:focus { outline: none; border-color: var(--accent-2); }
+.calc-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 10px; margin: 6px 2px 14px;
+}
+.calc-grid label {
+  display: flex; flex-direction: column; gap: 3px; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);
+}
+.calc-grid .calc-wide { grid-column: 1 / -1; }
+.calc-grid .calc-check {
+  flex-direction: row; align-items: center; gap: 6px;
+  text-transform: none; font-size: 12.5px; color: var(--text);
+}
+.calc-grid input[type="text"], .calc-grid input[type="number"], .calc-grid select {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; padding: 5px 6px; font-size: 13px; min-width: 0;
+}
+.calc-steps { display: flex; flex-wrap: wrap; gap: 10px; margin: 6px 2px 14px; }
+.calc-step {
+  flex: 1 1 108px; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px;
+}
+.cs-label {
+  display: block; font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--muted);
+}
+.cs-val { font-size: 17px; font-weight: 700; }
+.cs-note { font-size: 10.5px; color: var(--accent-2); }
+.calc-headline {
+  display: flex; flex-wrap: wrap; gap: 24px; padding: 12px 16px; margin: 0 2px 14px;
+  border: 1px solid var(--accent-2); border-radius: 10px;
+  background: color-mix(in srgb, var(--accent-2) 6%, transparent);
+}
+.ch-big { font-size: 26px; font-weight: 700; color: var(--accent-2); margin-right: 8px; }
+.ch-sub { font-size: 12px; color: var(--muted); }
 
 /* ---- overview / start page (list manager) ---- */
 .overview-overlay {
@@ -447,12 +498,19 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
   /* Play mode. */
   .play-head { flex-wrap: wrap; padding: 10px 14px; }
-  .play-head-actions { gap: 8px; }
-  .play-strats, .play-close { font-size: 12px; padding: 8px 10px; }
+  /* Three actions no longer fit beside the title — give them their own row. */
+  .play-head .play-title { flex: 1 1 100%; }
+  .play-head-actions { gap: 8px; width: 100%; }
+  .play-head-actions button { flex: 1; }
+  .play-act, .play-close { font-size: 12px; padding: 8px 10px; }
   .play-body { padding: 12px 14px; }
   .play-grid { grid-template-columns: 1fr; }
   .play-datasheet .ds-head { flex-wrap: wrap; }
-  .play-stratagems, .play-datasheet { padding: 0; }
+  .play-stratagems, .play-datasheet, .play-calculator { padding: 0; }
+  /* Neither wide table fits a phone; let each scroll on its own. */
+  .calc-weap, .calc-break { display: block; overflow-x: auto; }
+  .calc-grid { grid-template-columns: repeat(2, 1fr); }
+  .calc-step { flex-basis: 45%; }
 }
 
 /* ---- print ---- */

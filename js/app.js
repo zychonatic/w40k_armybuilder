@@ -1,6 +1,6 @@
 // Bootstrap + orchestration.
 
-import { POINTS_PRESETS, DEFAULT_LIMIT, dpBudget, normDetName } from './config.js';
+import { POINTS_PRESETS, DEFAULT_LIMIT, dpBudget, normDetName, CALC_KEY } from './config.js';
 import {
   loadFactionList, loadCatalogueBundle, loadDetachmentPoints, loadStratagemData,
 } from './data.js';
@@ -8,8 +8,9 @@ import { buildIndex, listUnits, listDetachments } from './catalogue.js';
 import { buildStratIndex, resolveArmyStratagems } from './stratagems.js';
 import {
   defaultSelections, toggleOption, SIZE_KEY, ENH_KEY, isCharacter, selectedEnhancement,
-  selectionsFromEntry,
+  selectionsFromEntry, weaponsForEntry, weaponModelCounts,
 } from './engine.js';
+import { resolveAttack } from './damage.js';
 import * as roster from './roster.js';
 import * as lists from './lists.js';
 import * as ui from './ui.js';
@@ -41,6 +42,7 @@ const dom = {
   playBody: document.getElementById('play-body'),
   playClose: document.getElementById('play-close'),
   playStrats: document.getElementById('play-strats'),
+  playCalc: document.getElementById('play-calc'),
   mobileTabs: document.querySelectorAll('.mobile-tabs button'),
   detailBack: document.querySelector('.detail-back'),
   overviewOverlay: document.getElementById('overview-overlay'),
@@ -61,6 +63,17 @@ const app = {
   edit: { uid: null, unit: null, selections: {} },
   play: { view: 'grid', uid: null, unitById: null },
   strats: null, // built stratagem index, lazily loaded on first play-mode use
+  // Damage calculator. Top-level (not under `play`) so the typed-in target
+  // profile survives leaving and re-entering play mode.
+  calc: {
+    uid: null,
+    weapons: {}, // `${name}|${type}` -> { on, models }
+    target: { T: 4, W: 2, sv: 3, inv: '', fnp: '', models: 10, keywords: '' },
+    mods: {
+      hitMod: 0, woundMod: 0, rerollHits: 'none', rerollWounds: 'none',
+      inCover: false, halfRange: false,
+    },
+  },
   filter: '',
   showLegends: false,
 };
@@ -390,6 +403,136 @@ function exitPlayMode() {
   app.play.view = 'grid';
 }
 
+// ---- damage calculator (play mode) -----------------------------------------
+
+// Target profile + modifiers persist across sessions; the attacker and its weapon
+// toggles don't, since they point at roster entries that may no longer exist.
+function loadCalcPrefs() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CALC_KEY) || 'null');
+    if (saved && saved.target) Object.assign(app.calc.target, saved.target);
+    if (saved && saved.mods) Object.assign(app.calc.mods, saved.mods);
+  } catch (e) {
+    console.warn('[app] could not read calculator prefs', e);
+  }
+}
+
+function saveCalcPrefs() {
+  try {
+    localStorage.setItem(CALC_KEY, JSON.stringify({ target: app.calc.target, mods: app.calc.mods }));
+  } catch (e) {
+    console.warn('[app] could not save calculator prefs', e);
+  }
+}
+
+const weaponKey = (w) => `${w.name}|${w.type}`;
+
+// Weapon rows for the chosen attacker: the entry's actual loadout, each with the
+// best guess at how many models carry it (BSData has no weapon counts).
+function calcWeaponRows(entry, unit) {
+  if (!unit) return [];
+  const counts = weaponModelCounts(unit, entry);
+  return weaponsForEntry(unit, entry).map((w) => ({
+    key: weaponKey(w), name: w.name, type: w.type, w, models: counts.get(w.name) || 1,
+  }));
+}
+
+// Re-seed the per-weapon on/count state for a newly chosen attacker.
+function seedCalcWeapons(rows) {
+  app.calc.weapons = {};
+  for (const r of rows) app.calc.weapons[r.key] = { on: true, models: r.models };
+}
+
+// Point the calculator at a still-valid roster entry, re-seeding when it changes.
+function ensureCalcAttacker(uid) {
+  const entries = roster.getState().entries;
+  const wanted = uid || app.calc.uid;
+  const entry = entries.find((e) => e.uid === wanted) || entries[0] || null;
+  if (!entry) { app.calc.uid = null; return null; }
+  if (entry.uid !== app.calc.uid) {
+    app.calc.uid = entry.uid;
+    seedCalcWeapons(calcWeaponRows(entry, app.play.unitById.get(entry.unitId) || null));
+  }
+  return entry;
+}
+
+function calcVm() {
+  const entries = roster.getState().entries;
+  const entry = entries.find((e) => e.uid === app.calc.uid) || null;
+  const unit = entry ? app.play.unitById.get(entry.unitId) || null : null;
+  const rows = calcWeaponRows(entry || {}, unit).map((r) => {
+    const st = app.calc.weapons[r.key] || { on: true, models: r.models };
+    return { ...r, on: st.on, models: st.models };
+  });
+  return {
+    entries: entries.map((e) => ({
+      uid: e.uid,
+      label: `${e.unitName}${e.modelCount ? ` ×${e.modelCount}` : ''} · ${e.role}`,
+    })),
+    attackerUid: app.calc.uid,
+    // A roster entry can outlive its faction being loaded — say so rather than
+    // silently showing an empty weapon list.
+    attackerHint: entry && !unit ? 'Load this unit’s faction to read its weapon profiles.' : '',
+    weapons: rows,
+    target: app.calc.target,
+    mods: app.calc.mods,
+    result: calcResult(rows),
+  };
+}
+
+function calcResult(rows) {
+  const enabled = rows.filter((r) => r.on && r.models > 0).map((r) => ({ weapon: r.w, models: r.models }));
+  if (!enabled.length) return null;
+  return resolveAttack(enabled, app.calc.target, app.calc.mods);
+}
+
+// Recompute and patch ONLY the results region, so typing never disturbs focus.
+function recalcDamage() {
+  const entry = roster.getState().entries.find((e) => e.uid === app.calc.uid) || null;
+  const unit = entry ? app.play.unitById.get(entry.unitId) || null : null;
+  const rows = calcWeaponRows(entry || {}, unit).map((r) => {
+    const st = app.calc.weapons[r.key] || { on: true, models: r.models };
+    return { ...r, on: st.on, models: st.models };
+  });
+  ui.renderCalcResults(dom.playBody.querySelector('.calc-results'), calcResult(rows));
+}
+
+// A field may legitimately be empty mid-typing, so keep the raw string and let
+// the calculator's own parsers apply defaults rather than snapping the value back
+// under the cursor.
+function calcNum(v) {
+  return v === '' ? '' : Number(v);
+}
+
+function showPlayCalc(uid) {
+  app.play.view = 'calc';
+  ensureCalcAttacker(uid);
+  ui.renderPlayCalculator(dom.playBody, calcVm(), {
+    onBack: showPlayGrid,
+    onPickAttacker: (next) => { ensureCalcAttacker(next); showPlayCalc(next); },
+    onWeaponToggle: (key, on) => {
+      const st = app.calc.weapons[key] || (app.calc.weapons[key] = { on: true, models: 1 });
+      st.on = on;
+      recalcDamage();
+    },
+    onWeaponModels: (key, v) => {
+      const st = app.calc.weapons[key] || (app.calc.weapons[key] = { on: true, models: 1 });
+      st.models = Math.max(0, Math.min(99, Number(v) || 0));
+      recalcDamage();
+    },
+    onTargetChange: (field, v) => {
+      app.calc.target[field] = field === 'keywords' ? v : calcNum(v);
+      saveCalcPrefs();
+      recalcDamage();
+    },
+    onModChange: (field, v) => {
+      app.calc.mods[field] = typeof v === 'boolean' ? v : (/Mod$/.test(field) ? Number(v) : v);
+      saveCalcPrefs();
+      recalcDamage();
+    },
+  });
+}
+
 function renderList() {
   ui.renderUnitList(dom.unitList, app.units, {
     filter: app.filter,
@@ -600,9 +743,10 @@ function wireEvents() {
   dom.btnPlay.addEventListener('click', enterPlayMode);
   dom.playClose.addEventListener('click', exitPlayMode);
   dom.playStrats.addEventListener('click', showPlayStrats);
+  dom.playCalc.addEventListener('click', () => showPlayCalc());
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || dom.playOverlay.classList.contains('hidden')) return;
-    if (app.play.view === 'sheet' || app.play.view === 'strats') showPlayGrid();
+    if (app.play.view !== 'grid') showPlayGrid();
     else exitPlayMode();
   });
   dom.btnCopy.addEventListener('click', async () => {
@@ -621,6 +765,7 @@ function wireEvents() {
 
 async function init() {
   lists.loadCollection(); // runs the one-time migration from the legacy single-roster key
+  loadCalcPrefs();
   setMobileTab('units');
   ui.renderLimitSelect(dom.limitSelect, POINTS_PRESETS, DEFAULT_LIMIT);
   refreshRoster();

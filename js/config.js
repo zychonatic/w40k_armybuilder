@@ -100,6 +100,11 @@ export const STORAGE_KEY = 'w40k_armybuilder_roster_v1';
 // `roster` has the same shape the single-roster key used to hold.
 export const LISTS_KEY = 'w40k_armybuilder_lists_v1';
 
+// Damage-calculator target profile + modifiers. Scratch state, not roster data —
+// the attacker and its weapon toggles are deliberately NOT persisted, since they
+// reference roster entries that go stale between sessions.
+export const CALC_KEY = 'w40k_armybuilder_calc_v1';
+
 // Fallback faction list if the GitHub contents API is unavailable / rate-limited.
 // Value = filename in the repo; label is derived from it.
 export const FALLBACK_FACTIONS = [
