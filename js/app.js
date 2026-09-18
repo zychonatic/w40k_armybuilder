@@ -68,7 +68,7 @@ const app = {
   calc: {
     uid: null,
     weapons: {}, // `${name}|${type}` -> { on, models }
-    target: { T: 4, W: 2, sv: 3, inv: '', fnp: '', models: 10, keywords: '' },
+    target: { T: 4, W: 2, sv: '3+', inv: '', fnp: '', models: 10, keywords: '' },
     mods: {
       hitMod: 0, woundMod: 0, rerollHits: 'none', rerollWounds: 'none',
       inCover: false, halfRange: false,
@@ -497,12 +497,10 @@ function recalcDamage() {
   ui.renderCalcResults(dom.playBody.querySelector('.calc-results'), calcResult(rows));
 }
 
-// A field may legitimately be empty mid-typing, so keep the raw string and let
-// the calculator's own parsers apply defaults rather than snapping the value back
-// under the cursor.
-function calcNum(v) {
-  return v === '' ? '' : Number(v);
-}
+// Target fields are stored as the RAW string the user typed and parsed only when
+// the maths runs. Coercing here would break both ends: a field is legitimately
+// empty mid-typing (and would snap back under the cursor), and saves are written
+// "3+", which Number() turns into NaN.
 
 function showPlayCalc(uid) {
   app.play.view = 'calc';
@@ -521,7 +519,7 @@ function showPlayCalc(uid) {
       recalcDamage();
     },
     onTargetChange: (field, v) => {
-      app.calc.target[field] = field === 'keywords' ? v : calcNum(v);
+      app.calc.target[field] = v;
       saveCalcPrefs();
       recalcDamage();
     },

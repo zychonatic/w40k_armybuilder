@@ -745,6 +745,15 @@ function calcNumField(label, field, value, extra = '') {
     <input type="number" data-calc="${esc(field)}" value="${esc(value)}" ${extra} /></label>`;
 }
 
+// Saves are written "3+", but a number input reports an EMPTY value for that —
+// which would silently read as "no save" and make AP look like it does nothing.
+// So saves get a text field; the parser already accepts both "3" and "3+".
+function calcSaveField(label, field, value, placeholder) {
+  return `<label>${esc(label)}
+    <input type="text" inputmode="numeric" maxlength="3" data-calc="${esc(field)}"
+           value="${esc(value)}" placeholder="${esc(placeholder)}" /></label>`;
+}
+
 // One row per weapon the entry carries: enabled flag, how many models fire it,
 // then the profile read-only in the same column order as the datasheet.
 function calcWeaponRows(weapons) {
@@ -804,9 +813,9 @@ export function renderPlayCalculator(bodyEl, vm, {
       <div class="calc-grid">
         ${calcNumField('Toughness', 'T', t.T, 'min="1"')}
         ${calcNumField('Wounds', 'W', t.W, 'min="1"')}
-        ${calcNumField('Save', 'sv', t.sv, 'min="2" max="7"')}
-        ${calcNumField('Invuln', 'inv', t.inv, 'min="2" max="6"')}
-        ${calcNumField('Feel No Pain', 'fnp', t.fnp, 'min="2" max="6"')}
+        ${calcSaveField('Save', 'sv', t.sv, '3+')}
+        ${calcSaveField('Invuln', 'inv', t.inv, 'none')}
+        ${calcSaveField('Feel No Pain', 'fnp', t.fnp, 'none')}
         ${calcNumField('Models', 'models', t.models, 'min="1"')}
         <label class="calc-wide">Keywords (for Anti-X)
           <input type="text" data-calc="keywords" value="${esc(t.keywords)}"
