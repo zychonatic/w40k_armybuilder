@@ -436,26 +436,48 @@ function parseUnitSize(entry) {
   min = Math.max(1, min);
   if (!found || max <= min) return null; // fixed size — no selector
 
-  // ---- point tiers from the entry's own `set` pts modifiers -----------------
-  const tierMap = new Map([[min, base]]);
+  // ---- point tiers from the entry's own model-count pts modifiers -----------
+  // Catalogues express these two ways: an absolute `set` per size, or a chain
+  // of `increment`s that stack (Lokhust Heavy Destroyers is 50 base, +50 at 2
+  // models, +65 at 3 → 50/100/165). So don't read a modifier's value as the
+  // tier cost — replay the whole chain in document order at each model count,
+  // exactly as BattleScribe applies it, and keep the sizes where it changes.
+  const ptsMods = [];
   const scanMods = (mods) => {
     for (const m of mods || []) {
-      if (m.field !== ptsType || m.type !== 'set') continue;
+      if (m.field !== ptsType) continue;
+      let start = null;
       for (const c of m.conditions || []) {
         if (c.field !== 'selections') continue;
-        let start = null;
         if (c.type === 'atLeast') start = Number(c.value);
         else if (c.type === 'greaterThan') start = Number(c.value) + 1;
-        if (start != null) { tierMap.set(start, Number(m.value) || 0); break; }
+        if (start != null) break;
       }
+      // No model-count condition: not a size tier (e.g. the "your 3rd+ unit of
+      // this type costs more" surcharge, which depends on the whole roster).
+      if (start != null) ptsMods.push({ start, type: m.type, value: Number(m.value) || 0 });
     }
   };
   scanMods(entry.modifiers);
   for (const mg of entry.modifierGroups || []) scanMods(mg.modifiers);
 
-  const tiers = [...tierMap.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([start, cost]) => ({ start, cost }));
+  const costAt = (n) => {
+    let cost = base;
+    for (const m of ptsMods) {
+      if (n < m.start) continue;
+      if (m.type === 'set') cost = m.value;
+      else if (m.type === 'increment') cost += m.value;
+      else if (m.type === 'decrement') cost -= m.value;
+      else if (m.type === 'multiply') cost *= m.value;
+    }
+    return cost;
+  };
+
+  const tiers = [];
+  for (let n = min; n <= max; n += 1) {
+    const cost = costAt(n);
+    if (!tiers.length || tiers[tiers.length - 1].cost !== cost) tiers.push({ start: n, cost });
+  }
   return { min, max, base, tiers };
 }
 
