@@ -731,8 +731,13 @@ export function renderPlayStratagems(bodyEl, vm, { onBack }) {
 
 const HIT_MODS = [[1, '+1'], [0, '+0'], [-1, '−1']];
 const REROLLS = [['none', '—'], ['ones', '1s'], ['all', 'All']];
+// Critical hits/wounds are a natural 6 unless a rule lowers the threshold.
+const CRIT_ONS = [[6, '6+'], [5, '5+'], [4, '4+']];
 // Fields that belong to `mods` rather than the target profile.
-const MOD_FIELDS = new Set(['hitMod', 'woundMod', 'rerollHits', 'rerollWounds', 'inCover', 'halfRange']);
+const MOD_FIELDS = new Set([
+  'hitMod', 'woundMod', 'rerollHits', 'rerollWounds', 'inCover', 'halfRange',
+  'critHit', 'critWound',
+]);
 
 function optionList(pairs, current) {
   return pairs.map(([v, label]) => (
@@ -828,6 +833,8 @@ export function renderPlayCalculator(bodyEl, vm, {
         <label>Wound<select data-calc="woundMod">${optionList(HIT_MODS, m.woundMod)}</select></label>
         <label>Re-roll hits<select data-calc="rerollHits">${optionList(REROLLS, m.rerollHits)}</select></label>
         <label>Re-roll wounds<select data-calc="rerollWounds">${optionList(REROLLS, m.rerollWounds)}</select></label>
+        <label>Crit hit on<select data-calc="critHit">${optionList(CRIT_ONS, m.critHit)}</select></label>
+        <label>Crit wound on<select data-calc="critWound">${optionList(CRIT_ONS, m.critWound)}</select></label>
         <label class="calc-check"><input type="checkbox" data-calc="inCover"${m.inCover ? ' checked' : ''} /> In cover</label>
         <label class="calc-check"><input type="checkbox" data-calc="halfRange"${m.halfRange ? ' checked' : ''} /> Half range</label>
       </div>

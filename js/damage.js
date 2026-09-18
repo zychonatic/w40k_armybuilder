@@ -276,8 +276,14 @@ export function resolveRow(weapon, tgt, opts) {
   let pHit = 1;
   let pCritHit = 0;
   if (!auto) {
+    // Crits are a natural 6 unless a rule moves the threshold (Custodes' Martial
+    // Ka'tah, Aeldari Bladestorm and similar "critical hits on a 5+" effects).
+    const critOn = clamp(num(opts.critHit, 6), 2, 6);
     const target = clamp(skill.target - clamp(Number(opts.hitMod) || 0, -1, 1), 2, 6);
-    const rr = applyReroll(pAtLeast(target), 1 / 6, opts.rerollHits);
+    // A critical hit always hits, so a threshold below the to-hit roll also
+    // widens what counts as a hit at all.
+    const succ = Math.min(target, critOn);
+    const rr = applyReroll(pAtLeast(succ), clamp((7 - critOn) / 6, 0, 5 / 6), opts.rerollHits);
     pHit = rr.p;
     pCritHit = Math.min(rr.crit, rr.p);
   }
@@ -289,7 +295,9 @@ export function resolveRow(weapon, tgt, opts) {
   // ---- wound
   const S = num(weapon.S, 4);
   let wt = woundTarget(S, tgt.T);
-  let critW = 6;
+  // Same for critical wounds, except Anti-X can lower the threshold further on
+  // top of whatever the user set.
+  let critW = clamp(num(opts.critWound, 6), 2, 6);
   for (const a of ab.anti) {
     if (tgt.kw.has(a.kw)) critW = Math.min(critW, a.on);
   }

@@ -71,7 +71,7 @@ const app = {
     target: { T: 4, W: 2, sv: '3+', inv: '', fnp: '', models: 10, keywords: '' },
     mods: {
       hitMod: 0, woundMod: 0, rerollHits: 'none', rerollWounds: 'none',
-      inCover: false, halfRange: false,
+      inCover: false, halfRange: false, critHit: 6, critWound: 6,
     },
   },
   filter: '',
@@ -427,6 +427,9 @@ function saveCalcPrefs() {
 
 const weaponKey = (w) => `${w.name}|${w.type}`;
 
+// Modifier fields whose select values are numbers rather than mode strings.
+const NUMERIC_MODS = new Set(['hitMod', 'woundMod', 'critHit', 'critWound']);
+
 // Weapon rows for the chosen attacker: the entry's actual loadout, each with the
 // best guess at how many models carry it (BSData has no weapon counts).
 function calcWeaponRows(entry, unit) {
@@ -524,7 +527,7 @@ function showPlayCalc(uid) {
       recalcDamage();
     },
     onModChange: (field, v) => {
-      app.calc.mods[field] = typeof v === 'boolean' ? v : (/Mod$/.test(field) ? Number(v) : v);
+      app.calc.mods[field] = typeof v === 'boolean' ? v : (NUMERIC_MODS.has(field) ? Number(v) : v);
       saveCalcPrefs();
       recalcDamage();
     },
