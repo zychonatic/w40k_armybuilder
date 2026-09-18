@@ -695,43 +695,126 @@ function normName(s) {
     .trim();
 }
 
-// Extract the unit names listed in a "Leader" ability's description. The text
-// reads "This model can be attached to the following units:" then one bulleted
-// (■, U+25A0) line per unit, in uppercase.
-function parseLeaderTargets(text) {
-  if (!text) return [];
-  return text.split(/\n/)
-    .map((l) => l.trim())
-    .filter((l) => /^■/.test(l))
-    .map((l) => l.replace(/^[■\s]+/, '').trim())
-    .filter(Boolean);
+// Strip BSData rich-text decoration (**bold**, ^^underline^^) off a target name.
+function cleanTargetName(s) {
+  return String(s == null ? '' : s).replace(/[*^_]+/g, '').trim();
 }
 
-// The Character→attachable-units relationship isn't structured in BSData; derive
-// it from the free-text ability by name-matching against loaded units. Two
-// ability names carry the same ■-bulleted target list: "Leader" (optional — the
-// character can operate on its own) and "Support" (mandatory — the character
-// must be attached to one of the listed units). They are mutually exclusive.
-// Sets `unit.leaderUnitIds` (attachable target ids) and `unit.mandatoryAttach`.
+// Extract the unit names listed in a "Leader"/"Support" ability description.
+// The wording is stable ("This model can be attached to the following units:")
+// but the list shape has drifted across BSData revisions, so accept all three
+// seen in the wild: ■-bulleted lines (U+25A0), markdown "- **^^Name^^**"
+// bullets, and a single inline comma-separated run after the colon.
+function parseLeaderTargets(text) {
+  if (!text) return [];
+  const bullets = String(text).split(/\n/)
+    .map((l) => l.trim())
+    .filter((l) => /^(?:■|[-*•])\s*\S/.test(l))
+    .map((l) => cleanTargetName(l.replace(/^(?:■|[-*•])\s*/, '')));
+  if (bullets.length) return bullets.filter(Boolean);
+  // Inline form: take the rest of that sentence only — trailing prose after the
+  // list ("You can attach this model even if…") must not be split into names.
+  const m = String(text).match(/attached to the following units?:\s*([^\n.]+)/i);
+  if (!m) return [];
+  return m[1].split(/,|;|\band\b/i).map(cleanTargetName).filter(Boolean);
+}
+
+// 11e BSData carries the Character→host relationship *structurally*, on the
+// character entry's `associations`: a "Leading" (optional) or "Supporting"
+// (mandatory, `min` 1) association whose `instanceOf` conditions name the
+// **category** ids a host unit must carry — not unit ids, so they resolve via
+// each unit's `categoryLinks`. This is the authoritative source; it survives
+// name drift ("Wraiths" the category vs "Canoptek Wraiths" the unit) and
+// [Legends] renames that name-matching the ability text misses.
+const ATTACH_ASSOCIATION = /^(leading|supporting)$/i;
+
+// Resolve one association to the set of host unit ids it accepts. The condition
+// groups are real boolean algebra, not a flat list: an `or` group unions its
+// branches while an `and` group *intersects* them — Aeldari Yvraine's
+// "Faction: Ynnari AND Incubi" means the Ynnari Incubi unit specifically, not
+// every Ynnari unit plus every Incubi unit.
+function assocHostUnitIds(assoc, byCategoryId) {
+  const unitsIn = (catId) => new Set(byCategoryId.get(catId) || []);
+  // Returns a Set of unit ids, or null for a branch that doesn't describe hosts.
+  const evalGroup = (node, andMode) => {
+    const conds = node.conditions || [];
+    // A branch gated on the character's *own* selections (`queryFromSelf` — a
+    // wargear/enhancement prerequisite, e.g. the Necron Technomancer's
+    // Murdermind unlocking Destroyer hosts) is a conditional extra rather than
+    // part of the printed datasheet list, so drop it.
+    if (conds.some((c) => c.queryFromSelf)) return null;
+    const positives = [];
+    const negatives = [];
+    for (const c of conds) {
+      if (!c.childId) continue;
+      if (c.type === 'instanceOf') positives.push(unitsIn(c.childId));
+      else if (c.type === 'notInstanceOf') negatives.push(unitsIn(c.childId));
+    }
+    for (const g of node.conditionGroups || []) {
+      const sub = evalGroup(g, g.type === 'and');
+      if (sub) positives.push(sub);
+    }
+    if (!positives.length) return null;
+    const out = andMode
+      ? positives.reduce((acc, s) => new Set([...acc].filter((id) => s.has(id))))
+      : new Set(positives.flatMap((s) => [...s]));
+    for (const s of negatives) for (const id of s) out.delete(id);
+    return out;
+  };
+  // The association holds when any of its top-level groups does.
+  return evalGroup(assoc, false) || new Set();
+}
+
+// Derive which units each Character may join. Primary source is the structured
+// `associations` above; the free-text "Leader"/"Support" ability is unioned in
+// on top, since it still covers catalogues that carry no associations at all
+// and the occasional host missing from one. Sets `unit.leaderUnitIds`
+// (attachable target ids) and `unit.mandatoryAttach` ("Support" — the character
+// MUST be attached; "Leader" characters may operate on their own).
 function annotateLeaders(units) {
-  const nameIndex = new Map();
+  const nameIndex = new Map(); // normalised unit name -> unit id
+  const byCategoryId = new Map(); // category id -> unit ids carrying it
   for (const u of units) {
+    // Only Bodyguard units can be hosts — a character never joins another
+    // character. Excluding them here keeps broad *keyword* categories from
+    // over-matching (the Space Wolves "Wolf Guard" category is carried by the
+    // Wolf Guard Battle Leader as well as by the Wolf Guard unit).
+    if (u.keywords.includes('Character')) continue;
     const k = normName(u.name);
     if (!nameIndex.has(k)) nameIndex.set(k, u.id);
+    for (const cl of (u.raw && u.raw.categoryLinks) || []) {
+      if (!cl.targetId) continue;
+      if (!byCategoryId.has(cl.targetId)) byCategoryId.set(cl.targetId, []);
+      byCategoryId.get(cl.targetId).push(u.id);
+    }
   }
   for (const u of units) {
     u.leaderUnitIds = [];
     u.mandatoryAttach = false;
     if (!u.keywords.includes('Character')) continue;
+
+    const ids = new Set();
+    const assocs = ((u.raw && u.raw.associations) || [])
+      .filter((a) => ATTACH_ASSOCIATION.test(a.name || ''));
+    for (const a of assocs) {
+      if ((Number(a.min) || 0) >= 1) u.mandatoryAttach = true;
+      for (const id of assocHostUnitIds(a, byCategoryId)) ids.add(id);
+    }
+
     const byName = (name) => u.abilities.find((a) => a.name && a.name.toLowerCase() === name);
     const leader = byName('leader');
     const support = byName('support');
     const src = leader || support;
-    if (!src) continue;
-    u.mandatoryAttach = !leader && !!support; // "Support" without "Leader" = must attach
-    for (const tok of parseLeaderTargets(src.text)) {
-      const id = nameIndex.get(normName(tok));
-      if (id && id !== u.id && !u.leaderUnitIds.includes(id)) u.leaderUnitIds.push(id);
+    if (src) {
+      // Only trust the ability name for mandatory-ness when there's no
+      // association to read `min` from.
+      if (!assocs.length) u.mandatoryAttach = !leader && !!support;
+      for (const tok of parseLeaderTargets(src.text)) {
+        const id = nameIndex.get(normName(tok));
+        if (id) ids.add(id);
+      }
     }
+
+    u.leaderUnitIds = [...ids];
   }
 }
