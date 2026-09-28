@@ -835,7 +835,7 @@ export function renderPlayCalculator(bodyEl, vm, {
         <label>Re-roll wounds<select data-calc="rerollWounds">${optionList(REROLLS, m.rerollWounds)}</select></label>
         <label>Crit hit on<select data-calc="critHit">${optionList(CRIT_ONS, m.critHit)}</select></label>
         <label>Crit wound on<select data-calc="critWound">${optionList(CRIT_ONS, m.critWound)}</select></label>
-        <label class="calc-check"><input type="checkbox" data-calc="inCover"${m.inCover ? ' checked' : ''} /> In cover</label>
+        <label class="calc-check" title="-1 to hit for ranged attacks (Ignores Cover skips it)"><input type="checkbox" data-calc="inCover"${m.inCover ? ' checked' : ''} /> In cover</label>
         <label class="calc-check"><input type="checkbox" data-calc="halfRange"${m.halfRange ? ' checked' : ''} /> Half range</label>
       </div>
     </section>

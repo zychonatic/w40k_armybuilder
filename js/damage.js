@@ -178,14 +178,11 @@ export function woundTarget(S, T) {
   return 5;
 }
 
-// Best save available against this weapon. Armour worsens by AP and improves by
-// cover; an invulnerable save is never modified by either.
-export function saveTarget(tgt, ap, ignoresCover, inCover) {
-  let armour = tgt.sv - ap; // ap is 0 or negative, so this worsens the save
-  // Note: the "Benefit of Cover" restriction (a 3+ or better armour save gains
-  // nothing from cover against AP 0) is not modelled — see the view's caveats.
-  if (inCover && !ignoresCover) armour -= 1;
-  armour = Math.max(2, armour);
+// Best save available against this weapon. Armour worsens by AP; an invulnerable
+// save is never modified. Cover does NOT touch the save in 11th edition — it is a
+// hit-roll penalty instead (see resolveRow).
+export function saveTarget(tgt, ap) {
+  const armour = Math.max(2, tgt.sv - ap); // ap is 0 or negative, so this worsens the save
   return tgt.inv == null ? armour : Math.min(armour, tgt.inv);
 }
 
@@ -279,7 +276,10 @@ export function resolveRow(weapon, tgt, opts) {
     // Crits are a natural 6 unless a rule moves the threshold (Custodes' Martial
     // Ka'tah, Aeldari Bladestorm and similar "critical hits on a 5+" effects).
     const critOn = clamp(num(opts.critHit, 6), 2, 6);
-    const target = clamp(skill.target - clamp(Number(opts.hitMod) || 0, -1, 1), 2, 6);
+    // 11th-edition cover is -1 to hit for ranged attacks. It is summed with the
+    // other hit modifiers BEFORE the ±1 cap, so +1 to hit into cover nets zero.
+    const cover = opts.inCover && !melee && !ab.ignoresCover ? -1 : 0;
+    const target = clamp(skill.target - clamp((Number(opts.hitMod) || 0) + cover, -1, 1), 2, 6);
     // A critical hit always hits, so a threshold below the to-hit roll also
     // widens what counts as a hit at all.
     const succ = Math.min(target, critOn);
@@ -310,7 +310,7 @@ export function resolveRow(weapon, tgt, opts) {
   const pCritW = Math.min(rrW.crit, rrW.p);
 
   // ---- save & damage
-  const best = saveTarget(tgt, parseAp(weapon.AP), ab.ignoresCover, opts.inCover);
+  const best = saveTarget(tgt, parseAp(weapon.AP));
   const pFail = 1 - clamp((7 - best) / 6, 0, 5 / 6); // a 1 always fails, so a save is never automatic
   const pFnp = tgt.fnp == null ? 0 : clamp((7 - tgt.fnp) / 6, 0, 5 / 6);
   const dEff = fnpApply(shift(diceDist(weapon.D), half ? ab.melta : 0), pFnp);
